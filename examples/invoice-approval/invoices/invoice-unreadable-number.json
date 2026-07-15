@@ -1,0 +1,10 @@
+{
+  "supplier": "Juniper Demo Parts",
+  "invoice_number": null,
+  "invoice_number_raw": "[unreadable]",
+  "purchase_order": "PO-1004",
+  "date": "2026-07-04",
+  "currency": "USD",
+  "total": 640.00,
+  "field_confidence": 0.54
+}

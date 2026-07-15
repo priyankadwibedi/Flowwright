@@ -1,0 +1,9 @@
+{
+  "supplier": "Bluebird Sample Goods",
+  "invoice_number": "INV-DEMO-1003",
+  "purchase_order": null,
+  "date": "2026-07-03",
+  "currency": "USD",
+  "total": 420.00,
+  "field_confidence": 0.97
+}
