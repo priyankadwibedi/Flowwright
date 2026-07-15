@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "start": "next start",
+    "start": "node scripts/static-server.mjs",
     "build": "next build",
     "lint": "eslint src tests --max-warnings=0",
     "typecheck": "tsc --noEmit",

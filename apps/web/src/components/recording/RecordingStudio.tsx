@@ -311,7 +311,13 @@ export function RecordingStudio() {
               The Chrome extension can add clicks, navigation, and non-sensitive
               text fields. It never records password-like inputs.
             </p>
-            <a href="/docs/">Read the capture guide ↗</a>
+            <a
+              href="https://github.com/priyankadwibedi/Flowwright/tree/main/docs"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Read the capture guide ↗
+            </a>
           </div>
           <div className="studio-note warning">
             <span className="mono-label">Prototype boundary</span>

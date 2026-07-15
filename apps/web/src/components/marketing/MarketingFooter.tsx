@@ -14,7 +14,13 @@ export function MarketingFooter() {
           <Link href="/record">Record</Link>
           <Link href="/workflows/demo">Demo</Link>
           <Link href="/tests">Tests</Link>
-          <a href="/docs/">Docs</a>
+          <a
+            href="https://github.com/priyankadwibedi/Flowwright/tree/main/docs"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Docs
+          </a>
         </div>
         <div className="footer-meta">
           <span>Apache License 2.0</span>

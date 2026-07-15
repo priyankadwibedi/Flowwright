@@ -32,7 +32,7 @@ Working today:
 - FastAPI health, demo workflow, analysis, deterministic test, and ephemeral key-frame endpoints.
 - Pydantic WorkflowIR, matching Zod schema, synthetic invoice fixtures, and generated graph using `@xyflow/react`.
 - Chrome Manifest V3 extension scaffold that captures safe clicks, navigation, and non-sensitive input events and exports JSON.
-- Static GitHub Pages introduction site in `docs/`.
+- GitHub Pages deployment of the Next.js frontend as a static export.
 - Demo mode works without an OpenAI key.
 
 Roadmap: production browser executor, richer event normalization, OpenAI-backed compilation with real demonstrations, generated application packaging, persistent storage, and deployment automation. These are not claimed as complete.
@@ -47,7 +47,7 @@ apps/api          FastAPI backend and tests
 apps/extension    Chrome Manifest V3 event-capture scaffold
 packages/...      WorkflowIR Zod package and sample workflow
 examples/...      Synthetic invoice and purchase-order data
-docs              GitHub Pages introduction
+docs              Supporting static product documentation
 scripts           Schema export and setup verification
 ```
 
@@ -71,7 +71,10 @@ Frontend:
 ```bash
 pnpm dev:web
 pnpm --filter @flowwright/web build
+pnpm --filter @flowwright/web start
 ```
+
+The `start` command serves the generated static export locally after `build`.
 
 Backend:
 
@@ -132,7 +135,7 @@ Run `cd apps/api && uv run pytest` for backend tests, `pnpm --filter @flowwright
 
 ## Deployment guidance
 
-The static introduction site can be deployed from `docs/` with GitHub Pages. The Next.js app targets Vercel. The FastAPI service targets Railway, Render, or Fly.io. Future PostgreSQL storage can use Neon or Supabase; future media storage can use Cloudflare R2 or Amazon S3. Credentials and deployment actions are intentionally not included.
+GitHub Pages builds and deploys the Next.js frontend from `apps/web/out` with the `/Flowwright` project-site base path. The FastAPI service targets Railway, Render, or Fly.io. Future PostgreSQL storage can use Neon or Supabase; future media storage can use Cloudflare R2 or Amazon S3. Credentials and deployment actions are intentionally not included.
 
 ## Roadmap and hackathon demo flow
 

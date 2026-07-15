@@ -3,7 +3,7 @@ export default defineConfig({
   testDir: "./tests/e2e",
   use: { baseURL: "http://localhost:3000", ...devices["Desktop Chrome"] },
   webServer: {
-    command: "next start",
+    command: "pnpm start",
     url: "http://localhost:3000",
     reuseExistingServer: true,
   },
