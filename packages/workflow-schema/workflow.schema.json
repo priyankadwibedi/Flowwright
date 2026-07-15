@@ -1,0 +1,399 @@
+{
+  "$defs": {
+    "WorkflowApproval": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "trigger": {
+          "minLength": 1,
+          "title": "Trigger",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "description", "trigger", "step_id"],
+      "title": "WorkflowApproval",
+      "type": "object"
+    },
+    "WorkflowDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "condition": {
+          "minLength": 1,
+          "title": "Condition",
+          "type": "string"
+        },
+        "true_step_id": {
+          "minLength": 1,
+          "title": "True Step Id",
+          "type": "string"
+        },
+        "false_step_id": {
+          "minLength": 1,
+          "title": "False Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "condition",
+        "true_step_id",
+        "false_step_id"
+      ],
+      "title": "WorkflowDecision",
+      "type": "object"
+    },
+    "WorkflowInput": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "data_type": {
+          "minLength": 1,
+          "title": "Data Type",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "example": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Example"
+        }
+      },
+      "required": ["id", "name", "description", "data_type", "required"],
+      "title": "WorkflowInput",
+      "type": "object"
+    },
+    "WorkflowStep": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "input",
+            "ai_extract",
+            "lookup",
+            "condition",
+            "transform",
+            "write",
+            "draft",
+            "approval",
+            "human_review"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "input_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Refs",
+          "type": "array"
+        },
+        "output_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Refs",
+          "type": "array"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "requires_ai": {
+          "title": "Requires Ai",
+          "type": "boolean"
+        },
+        "requires_approval": {
+          "title": "Requires Approval",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "description",
+        "depends_on",
+        "input_refs",
+        "output_refs",
+        "configuration",
+        "requires_ai",
+        "requires_approval"
+      ],
+      "title": "WorkflowStep",
+      "type": "object"
+    },
+    "WorkflowTest": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "input_case": {
+          "additionalProperties": true,
+          "title": "Input Case",
+          "type": "object"
+        },
+        "expected_outcome": {
+          "minLength": 1,
+          "title": "Expected Outcome",
+          "type": "string"
+        },
+        "actual_outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual Outcome"
+        },
+        "status": {
+          "enum": ["pending", "passed", "failed", "human_review"],
+          "title": "Status",
+          "type": "string"
+        },
+        "explanation": {
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "input_case",
+        "expected_outcome",
+        "status",
+        "explanation"
+      ],
+      "title": "WorkflowTest",
+      "type": "object"
+    },
+    "WorkflowVariable": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "data_type": {
+          "minLength": 1,
+          "title": "Data Type",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "sensitive": {
+          "title": "Sensitive",
+          "type": "boolean"
+        },
+        "constant": {
+          "title": "Constant",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "data_type",
+        "source",
+        "sensitive",
+        "constant"
+      ],
+      "title": "WorkflowVariable",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "title": "Version",
+      "type": "string"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/WorkflowInput"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "variables": {
+      "items": {
+        "$ref": "#/$defs/WorkflowVariable"
+      },
+      "title": "Variables",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/WorkflowStep"
+      },
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    },
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/WorkflowDecision"
+      },
+      "title": "Decisions",
+      "type": "array"
+    },
+    "approvals": {
+      "items": {
+        "$ref": "#/$defs/WorkflowApproval"
+      },
+      "title": "Approvals",
+      "type": "array"
+    },
+    "tests": {
+      "items": {
+        "$ref": "#/$defs/WorkflowTest"
+      },
+      "title": "Tests",
+      "type": "array"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "version",
+    "inputs",
+    "variables",
+    "steps",
+    "decisions",
+    "approvals",
+    "tests",
+    "confidence",
+    "created_at"
+  ],
+  "title": "WorkflowIR",
+  "type": "object"
+}

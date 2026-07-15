@@ -1,0 +1,25 @@
+{
+  "name": "flowwright",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "AI workflow compiler that turns human demonstrations into tested, executable applications using OpenAI and Codex.",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @flowwright/web dev",
+    "dev:extension": "pnpm --filter @flowwright/extension dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm --filter @flowwright/web test:e2e",
+    "format": "prettier --write README.md package.json pnpm-workspace.yaml apps/web/src apps/web/tests apps/web/*.json apps/web/*.ts apps/web/*.mjs apps/extension/src apps/extension/public apps/extension/*.json apps/extension/*.md packages/workflow-schema/src packages/*/*.json packages/*/*.mjs docs/index.html docs/styles.css docs/app.js .github",
+    "format:check": "prettier --check README.md package.json pnpm-workspace.yaml apps/web/src apps/web/tests apps/web/*.json apps/web/*.ts apps/web/*.mjs apps/extension/src apps/extension/public apps/extension/*.json apps/extension/*.md packages/workflow-schema/src packages/*/*.json packages/*/*.mjs docs/index.html docs/styles.css docs/app.js .github",
+    "check": "pnpm lint && pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

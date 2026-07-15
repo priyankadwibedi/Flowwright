@@ -1,0 +1,10 @@
+name: Bug report
+description: Report a reproducible problem
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include safe synthetic data only.
+    validations:
+      required: true

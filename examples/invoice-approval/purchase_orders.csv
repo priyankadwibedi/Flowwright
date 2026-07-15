@@ -1,0 +1,4 @@
+purchase_order,supplier,currency,total
+PO-1001,Northstar Office Labs,USD,1250.00
+PO-1002,Cedar Test Supplies,USD,900.00
+PO-1004,Juniper Demo Parts,USD,640.00

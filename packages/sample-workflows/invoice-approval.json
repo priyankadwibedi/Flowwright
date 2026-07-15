@@ -1,0 +1,263 @@
+{
+  "id": "invoice-approval-demo",
+  "name": "Invoice approval",
+  "description": "Extract invoice fields, find the matching purchase order, compare totals, and route uncertain or high-impact actions for human approval.",
+  "version": "0.1.0",
+  "inputs": [
+    {
+      "id": "invoice_document",
+      "name": "Invoice document",
+      "description": "A synthetic invoice document supplied by the user.",
+      "data_type": "document",
+      "required": true,
+      "example": "invoice-exact-match.json"
+    }
+  ],
+  "variables": [
+    {
+      "id": "supplier",
+      "name": "Supplier",
+      "description": "Synthetic supplier name.",
+      "data_type": "string",
+      "source": "invoice_document",
+      "sensitive": false,
+      "constant": false
+    },
+    {
+      "id": "invoice_number",
+      "name": "Invoice number",
+      "description": "Invoice reference extracted from the document.",
+      "data_type": "string",
+      "source": "invoice_document",
+      "sensitive": false,
+      "constant": false
+    },
+    {
+      "id": "purchase_order",
+      "name": "Purchase order",
+      "description": "Purchase-order reference extracted from the invoice.",
+      "data_type": "string",
+      "source": "invoice_document",
+      "sensitive": false,
+      "constant": false
+    },
+    {
+      "id": "invoice_date",
+      "name": "Invoice date",
+      "description": "Invoice issue date.",
+      "data_type": "date",
+      "source": "invoice_document",
+      "sensitive": false,
+      "constant": false
+    },
+    {
+      "id": "invoice_total",
+      "name": "Invoice total",
+      "description": "Total amount shown on the invoice.",
+      "data_type": "decimal",
+      "source": "invoice_document",
+      "sensitive": false,
+      "constant": false
+    },
+    {
+      "id": "po_total",
+      "name": "Purchase-order total",
+      "description": "Expected total from the matched purchase order.",
+      "data_type": "decimal",
+      "source": "purchase_order_record",
+      "sensitive": false,
+      "constant": false
+    },
+    {
+      "id": "currency",
+      "name": "Currency",
+      "description": "Currency required for comparison.",
+      "data_type": "string",
+      "source": "policy",
+      "sensitive": false,
+      "constant": true
+    }
+  ],
+  "steps": [
+    {
+      "id": "invoice_upload",
+      "name": "Invoice upload",
+      "type": "input",
+      "description": "Accept a synthetic invoice document for analysis.",
+      "depends_on": [],
+      "input_refs": ["invoice_document"],
+      "output_refs": ["stored_invoice"],
+      "configuration": {
+        "accepted_formats": ["application/json", "application/pdf"]
+      },
+      "requires_ai": false,
+      "requires_approval": false
+    },
+    {
+      "id": "extract_fields",
+      "name": "AI field extraction",
+      "type": "ai_extract",
+      "description": "Extract supplier, invoice number, purchase order, date, total, and currency with uncertainty retained.",
+      "depends_on": ["invoice_upload"],
+      "input_refs": ["stored_invoice"],
+      "output_refs": [
+        "supplier",
+        "invoice_number",
+        "purchase_order",
+        "invoice_date",
+        "invoice_total"
+      ],
+      "configuration": {
+        "required_fields": [
+          "supplier",
+          "invoice_number",
+          "purchase_order",
+          "invoice_date",
+          "invoice_total"
+        ],
+        "minimum_confidence": 0.85
+      },
+      "requires_ai": true,
+      "requires_approval": false
+    },
+    {
+      "id": "lookup_po",
+      "name": "Purchase-order lookup",
+      "type": "lookup",
+      "description": "Look up the purchase-order record using the extracted reference.",
+      "depends_on": ["extract_fields"],
+      "input_refs": ["purchase_order"],
+      "output_refs": ["purchase_order_record", "po_total"],
+      "configuration": {
+        "source": "synthetic_purchase_orders",
+        "match": "exact"
+      },
+      "requires_ai": false,
+      "requires_approval": false
+    },
+    {
+      "id": "compare_totals",
+      "name": "Total comparison",
+      "type": "condition",
+      "description": "Compare invoice and purchase-order totals in the same currency.",
+      "depends_on": ["lookup_po"],
+      "input_refs": ["invoice_total", "po_total", "currency"],
+      "output_refs": ["totals_match"],
+      "configuration": { "operator": "equals", "tolerance": 0 },
+      "requires_ai": false,
+      "requires_approval": false
+    },
+    {
+      "id": "approve_invoice",
+      "name": "Approval path",
+      "type": "approval",
+      "description": "Prepare the matching invoice for an explicit human approval action.",
+      "depends_on": ["compare_totals"],
+      "input_refs": ["totals_match"],
+      "output_refs": ["approval_record"],
+      "configuration": { "action": "approve", "automatic_execution": false },
+      "requires_ai": false,
+      "requires_approval": true
+    },
+    {
+      "id": "flag_exception",
+      "name": "Exception path",
+      "type": "draft",
+      "description": "Draft an exception record when invoice and purchase-order totals differ.",
+      "depends_on": ["compare_totals"],
+      "input_refs": ["invoice_total", "po_total"],
+      "output_refs": ["exception_record"],
+      "configuration": { "reason": "amount_mismatch" },
+      "requires_ai": false,
+      "requires_approval": false
+    },
+    {
+      "id": "human_review",
+      "name": "Human-review path",
+      "type": "human_review",
+      "description": "Request review when required information is missing, unreadable, or uncertain.",
+      "depends_on": ["extract_fields"],
+      "input_refs": ["invoice_number", "purchase_order"],
+      "output_refs": ["review_request"],
+      "configuration": {
+        "reasons": ["missing_field", "low_confidence", "missing_purchase_order"]
+      },
+      "requires_ai": false,
+      "requires_approval": true
+    }
+  ],
+  "decisions": [
+    {
+      "id": "required_fields_present",
+      "name": "Required fields present",
+      "description": "Only continue when required fields were extracted confidently.",
+      "condition": "invoice_number != null and purchase_order != null and extraction_confidence >= 0.85",
+      "true_step_id": "lookup_po",
+      "false_step_id": "human_review"
+    },
+    {
+      "id": "invoice_total_matches_po",
+      "name": "Totals match",
+      "description": "Route exact total matches to approval and mismatches to an exception draft.",
+      "condition": "invoice_total == po_total",
+      "true_step_id": "approve_invoice",
+      "false_step_id": "flag_exception"
+    }
+  ],
+  "approvals": [
+    {
+      "id": "invoice_approval_gate",
+      "name": "Invoice approval confirmation",
+      "description": "A person must confirm the high-impact approval action.",
+      "trigger": "totals_match == true",
+      "step_id": "approve_invoice"
+    },
+    {
+      "id": "uncertain_data_gate",
+      "name": "Uncertain data review",
+      "description": "A person resolves missing or low-confidence invoice information.",
+      "trigger": "required_fields_present == false",
+      "step_id": "human_review"
+    }
+  ],
+  "tests": [
+    {
+      "id": "exact_match",
+      "name": "Matching invoice",
+      "input_case": { "invoice_file": "invoice-exact-match.json" },
+      "expected_outcome": "approved",
+      "actual_outcome": "approved",
+      "status": "passed",
+      "explanation": "PO-1001 exists and both totals are 1250.00 USD; the approval gate is reached."
+    },
+    {
+      "id": "amount_mismatch",
+      "name": "Amount mismatch",
+      "input_case": { "invoice_file": "invoice-amount-mismatch.json" },
+      "expected_outcome": "exception",
+      "actual_outcome": "exception",
+      "status": "passed",
+      "explanation": "The invoice total is 980.00 USD while PO-1002 is 900.00 USD."
+    },
+    {
+      "id": "missing_purchase_order",
+      "name": "Missing purchase order",
+      "input_case": { "invoice_file": "invoice-missing-po.json" },
+      "expected_outcome": "human_review",
+      "actual_outcome": "human_review",
+      "status": "human_review",
+      "explanation": "The purchase-order reference is missing, so lookup cannot proceed safely."
+    },
+    {
+      "id": "unreadable_invoice_number",
+      "name": "Unreadable invoice number",
+      "input_case": { "invoice_file": "invoice-unreadable-number.json" },
+      "expected_outcome": "human_review",
+      "actual_outcome": "human_review",
+      "status": "human_review",
+      "explanation": "The invoice number is marked unreadable and requires a person to resolve it."
+    }
+  ],
+  "confidence": 0.94,
+  "created_at": "2026-07-15T00:00:00Z"
+}

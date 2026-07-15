@@ -1,0 +1,9 @@
+{
+  "supplier": "Cedar Test Supplies",
+  "invoice_number": "INV-DEMO-1002",
+  "purchase_order": "PO-1002",
+  "date": "2026-07-02",
+  "currency": "USD",
+  "total": 980.00,
+  "field_confidence": 0.98
+}

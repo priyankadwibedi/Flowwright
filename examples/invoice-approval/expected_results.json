@@ -1,0 +1,6 @@
+{
+  "invoice-exact-match.json": "approved",
+  "invoice-amount-mismatch.json": "exception",
+  "invoice-missing-po.json": "human_review",
+  "invoice-unreadable-number.json": "human_review"
+}

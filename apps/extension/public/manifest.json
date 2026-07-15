@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Flowwright Event Capture",
+  "version": "0.1.0",
+  "description": "Capture safe browser events for a Flowwright demonstration.",
+  "permissions": ["activeTab", "storage", "downloads"],
+  "action": { "default_popup": "popup.html" },
+  "background": { "service_worker": "../dist/background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["../dist/content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "host_permissions": ["<all_urls>"]
+}
