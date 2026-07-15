@@ -2,6 +2,7 @@
   "name": "flowwright",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "AI workflow compiler that turns human demonstrations into tested, executable applications using OpenAI and Codex.",
   "packageManager": "pnpm@11.7.0",
   "engines": {

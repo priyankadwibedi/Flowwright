@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
+import { AnnouncementBar } from "../../components/marketing/AnnouncementBar";
+import { MarketingHeader } from "../../components/marketing/MarketingHeader";
+import { TestResultCard } from "../../components/testing/TestResultCard";
+import { TestSummary } from "../../components/testing/TestSummary";
 import { API_URL } from "../../lib/config";
-import { runInvoiceTests } from "../../components/testing/results";
 
 export default function TestsPage() {
   const [workflow, setWorkflow] = useState<WorkflowIR | null>(null);
@@ -23,47 +26,43 @@ export default function TestsPage() {
         ),
       );
   }, []);
-  const results = workflow ? runInvoiceTests(workflow.tests) : [];
   return (
-    <main className="shell">
-      <nav className="nav">
-        <Link className="mark" href="/">
-          flowwright
-        </Link>
-        <Link href="/workflows/demo">Workflow graph →</Link>
-      </nav>
-      <div className="eyebrow">Verification</div>
-      <h1>Test results</h1>
-      <p>
-        Deterministic synthetic invoice cases show how expected and unexpected
-        inputs are routed.
-      </p>
-      {error && (
-        <div className="notice">
-          {error}. Start the FastAPI backend or use the mocked frontend test.
+    <main className="marketing-page">
+      <AnnouncementBar />
+      <MarketingHeader />
+      <section className="tests-page content-width">
+        <div className="tests-heading">
+          <div>
+            <div className="eyebrow">Verification / 04</div>
+            <h1>Test the workflow before it runs.</h1>
+            <p>
+              Deterministic synthetic invoice cases show how expected and
+              unexpected inputs are routed.
+            </p>
+          </div>
+          <Link className="button button-outline" href="/workflows/demo">
+            Inspect workflow ↗
+          </Link>
         </div>
-      )}
-      {!workflow && !error && <p>Loading validated test data…</p>}
-      <div className="cards" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-        {results.map((result) => (
-          <article className="card" key={result.id}>
-            <div className={`status ${result.status}`}>
-              {result.status.replace("_", " ")}
+        {error && (
+          <div className="notice notice-error">
+            {error}. Start the FastAPI backend or use the mocked frontend test.
+          </div>
+        )}
+        {!workflow && !error && (
+          <div className="loading-state">Loading validated test data…</div>
+        )}
+        {workflow && (
+          <>
+            <TestSummary results={workflow.tests} />
+            <div className="test-results-grid">
+              {workflow.tests.map((result, index) => (
+                <TestResultCard result={result} index={index} key={result.id} />
+              ))}
             </div>
-            <h3>{result.name}</h3>
-            <p>
-              <strong>Input:</strong> {result.input_case.invoice_file}
-            </p>
-            <p>
-              <strong>Expected:</strong> {result.expected_outcome}
-            </p>
-            <p>
-              <strong>Actual:</strong> {result.actual_outcome}
-            </p>
-            <p>{result.explanation}</p>
-          </article>
-        ))}
-      </div>
+          </>
+        )}
+      </section>
     </main>
   );
 }

@@ -77,11 +77,32 @@ test("home, invoice demo, graph, and test results are reachable", async ({
   );
   await page.goto("/");
   await expect(
-    page.getByText("Turn the way you work into software."),
+    page.getByRole("heading", { name: "Show the work. Ship the workflow." }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Load invoice demo" }).click();
-  await expect(page.getByText("Workflow graph")).toBeVisible();
+  await page.getByRole("link", { name: "Watch the demo" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Invoice approval" }),
+  ).toBeVisible();
+  await expect(page.locator(".workflow-canvas")).toBeVisible();
   await page.goto("/tests");
   await expect(page.getByText("Matching invoice")).toBeVisible();
   await expect(page.getByText("Unreadable invoice number")).toBeVisible();
+});
+
+test("mobile navigation and layout stay usable without horizontal overflow", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: /toggle navigation/i }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /toggle navigation/i }).click();
+  await expect(
+    page.getByRole("link", { name: "Try Flowwright" }),
+  ).toBeVisible();
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth + 1,
+  );
+  expect(overflows).toBe(false);
 });

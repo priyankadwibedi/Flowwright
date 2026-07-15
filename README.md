@@ -137,11 +137,11 @@ The static introduction site can be deployed from `docs/` with GitHub Pages. The
 ## Roadmap and hackathon demo flow
 
 1. Start the API in demo mode and the frontend.
-2. Show the recording screen and its safety notice.
-3. Open the invoice demo graph and inspect variables, decisions, and approval gates.
+2. Record a browser demonstration, stop it, describe the task, and choose **Analyze demonstration**. Key-frame extraction is explicit and temporary.
+3. Open the compiled workflow graph and inspect variables, decisions, and approval gates.
 4. Open test results for all four synthetic cases.
 5. Show the extension scaffold and static product site.
 
 ## Contributing and license
 
-See `CONTRIBUTING.md` for setup and pull-request expectations. Flowwright is released under the MIT License in `LICENSE`.
+See `CONTRIBUTING.md` for setup and pull-request expectations. Flowwright is released under the Apache License, Version 2.0 in `LICENSE`.
