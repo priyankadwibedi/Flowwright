@@ -1,8 +1,12 @@
+import { Handle, Position } from "@xyflow/react";
+
 type WorkflowNodeData = {
   label: string;
   type: string;
   description: string;
   selected?: boolean;
+  confidence?: number;
+  evidenceIds?: string[];
 };
 
 const typeLabels: Record<string, string> = {
@@ -28,8 +32,11 @@ export function WorkflowNode({ data }: { data: WorkflowNodeData }) {
       </span>
       <strong>{data.label}</strong>
       <small>{data.description}</small>
+      <small className="flow-node-confidence">
+        confidence {Math.round((data.confidence ?? 0) * 100)}% · evidence{" "}
+        {(data.evidenceIds ?? []).length}
+      </small>
       <Handle type="source" position={Position.Right} className="flow-handle" />
     </div>
   );
 }
-import { Handle, Position } from "@xyflow/react";

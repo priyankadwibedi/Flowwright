@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsc -p tsconfig.json --watch",
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "validate": "node scripts/validate-build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },

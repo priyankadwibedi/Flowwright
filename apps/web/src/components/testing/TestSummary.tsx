@@ -1,7 +1,7 @@
-import type { WorkflowTest } from "@flowwright/workflow-schema";
+import type { TestExecution } from "../../lib/validation";
 import { ReadinessIndicator } from "./ReadinessIndicator";
 
-export function TestSummary({ results }: { results: WorkflowTest[] }) {
+export function TestSummary({ results }: { results: TestExecution[] }) {
   const passed = results.filter((result) => result.status === "passed").length;
   const review = results.filter(
     (result) => result.status === "human_review",

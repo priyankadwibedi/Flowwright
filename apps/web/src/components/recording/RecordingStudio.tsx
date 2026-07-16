@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { workflowIRSchema } from "@flowwright/workflow-schema";
-import { API_URL } from "../../lib/config";
+import { API_CONFIGURED, API_URL } from "../../lib/config";
+import {
+  processedDemonstrationSchema,
+  type ProcessedDemonstration,
+} from "../../lib/validation";
 import { RecordingChecklist } from "./RecordingChecklist";
 import { RecordingControls } from "./RecordingControls";
 import { RecordingPreview } from "./RecordingPreview";
+
+type ActionStatus = "idle" | "processing" | "ready" | "error";
 
 export function RecordingStudio() {
   const router = useRouter();
@@ -19,10 +26,13 @@ export function RecordingStudio() {
   const [eventLog, setEventLog] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [spokenExplanation, setSpokenExplanation] = useState(true);
-  const [analysisStatus, setAnalysisStatus] = useState<
-    "idle" | "analyzing" | "ready" | "error"
-  >("idle");
-  const [analysisMessage, setAnalysisMessage] = useState("");
+  const [processed, setProcessed] = useState<ProcessedDemonstration | null>(
+    null,
+  );
+  const [processingStatus, setProcessingStatus] =
+    useState<ActionStatus>("idle");
+  const [analysisStatus, setAnalysisStatus] = useState<ActionStatus>("idle");
+  const [message, setMessage] = useState("");
 
   useEffect(
     () => () => {
@@ -57,8 +67,10 @@ export function RecordingStudio() {
       };
       recorder.current = mediaRecorder;
       setSeconds(0);
+      setProcessed(null);
+      setProcessingStatus("idle");
       setAnalysisStatus("idle");
-      setAnalysisMessage("");
+      setMessage("");
       setStatus("Recording");
       mediaRecorder.start(250);
     } catch {
@@ -71,87 +83,91 @@ export function RecordingStudio() {
     setStatus("Recording ready");
   }
 
-  async function analyzeDemonstration() {
-    if (!taskDescription.trim()) {
-      setAnalysisStatus("error");
-      setAnalysisMessage(
-        "Add a short description of what you demonstrated first.",
+  async function processEvidence() {
+    if (!recordingBlob) return;
+    if (!API_CONFIGURED || !API_URL) {
+      setProcessingStatus("error");
+      setMessage(
+        "Evidence processing is unavailable because the backend URL is not configured.",
       );
       return;
     }
-    let browserEventLog: Record<string, unknown>[] | undefined;
-    if (eventLog) {
-      try {
-        const parsed: unknown = JSON.parse(eventLog);
-        if (
-          !Array.isArray(parsed) ||
-          parsed.some(
-            (item) => !item || typeof item !== "object" || Array.isArray(item),
-          )
-        )
-          throw new Error("The event log must be a JSON array of objects.");
-        browserEventLog = parsed as Record<string, unknown>[];
-      } catch (error) {
-        setAnalysisStatus("error");
-        setAnalysisMessage(
-          error instanceof Error
-            ? error.message
-            : "The event log is not valid JSON.",
-        );
-        return;
-      }
-    }
-    setAnalysisStatus("analyzing");
-    setAnalysisMessage(
-      "Extracting temporary key frames and compiling a workflow...",
+    setProcessingStatus("processing");
+    setMessage(
+      "Extracting real JPEG frames and synchronizing browser evidence...",
     );
     try {
-      let screenshots: string[] | undefined;
-      if (recordingBlob) {
-        const media = new FormData();
-        media.append("file", recordingBlob, "flowwright-recording.webm");
-        const keyframeResponse = await fetch(
-          `${API_URL}/api/v1/media/keyframes`,
-          { method: "POST", body: media },
-        );
-        if (keyframeResponse.ok) {
-          const payload: { frames?: unknown[] } = await keyframeResponse.json();
-          screenshots = (payload.frames ?? []).map((frame) =>
-            JSON.stringify(frame),
-          );
-        } else
-          setAnalysisMessage(
-            "Key-frame extraction was unavailable; compiling from the description and event log...",
-          );
-      }
+      const media = new FormData();
+      media.append("file", recordingBlob, "flowwright-recording.webm");
+      if (eventLog) media.append("event_log", eventLog);
+      media.append("task_description", taskDescription.trim());
+      const response = await fetch(
+        `${API_URL}/api/v1/media/process-demonstration`,
+        {
+          method: "POST",
+          body: media,
+        },
+      );
+      if (!response.ok)
+        throw new Error(`Evidence processing failed (${response.status}).`);
+      const payload = processedDemonstrationSchema.parse(await response.json());
+      setProcessed(payload);
+      setProcessingStatus("ready");
+      setMessage(
+        "Evidence is ready for review. AI inference remains a separate explicit action.",
+      );
+    } catch (error) {
+      setProcessingStatus("error");
+      setMessage(
+        error instanceof Error ? error.message : "Evidence processing failed.",
+      );
+    }
+  }
+
+  async function analyzeDemonstration() {
+    if (!taskDescription.trim()) {
+      setAnalysisStatus("error");
+      setMessage("Add a short description of what you demonstrated first.");
+      return;
+    }
+    if (!processed) {
+      setAnalysisStatus("error");
+      setMessage("Process the evidence before requesting AI inference.");
+      return;
+    }
+    if (!API_CONFIGURED || !API_URL) {
+      setAnalysisStatus("error");
+      setMessage(
+        "AI analysis is unavailable because the production API URL is not configured.",
+      );
+      return;
+    }
+    setAnalysisStatus("processing");
+    setMessage("Sending reviewed evidence to the configured AI analyzer...");
+    try {
       const response = await fetch(`${API_URL}/api/v1/workflows/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           task_description: taskDescription.trim(),
-          browser_event_log: browserEventLog,
-          screenshots,
-          transcript: spokenExplanation
-            ? "Spoken explanation included in recording"
-            : undefined,
+          processed_demonstration: processed,
+          transcript: processed.transcript || undefined,
         }),
       });
       if (!response.ok)
-        throw new Error(
-          `Analysis failed (${response.status}). Is the API running?`,
-        );
+        throw new Error(`AI analysis unavailable (${response.status}).`);
       const workflow = workflowIRSchema.parse(await response.json());
       sessionStorage.setItem("flowwright.workflow", JSON.stringify(workflow));
       setAnalysisStatus("ready");
-      setAnalysisMessage(
-        "Workflow compiled. Open it to inspect the graph, decisions, and approval gates.",
+      setMessage(
+        "Workflow inferred. Open it to inspect provenance, decisions, and approval gates.",
       );
     } catch (error) {
       setAnalysisStatus("error");
-      setAnalysisMessage(
+      setMessage(
         error instanceof Error
           ? error.message
-          : "The workflow could not be compiled.",
+          : "The workflow could not be inferred.",
       );
     }
   }
@@ -159,6 +175,7 @@ export function RecordingStudio() {
   function uploadExisting() {
     document.getElementById("existing-recording")?.click();
   }
+
   function onExistingRecording(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -166,6 +183,8 @@ export function RecordingStudio() {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(URL.createObjectURL(file));
     setStatus("Recording ready");
+    setProcessed(null);
+    setProcessingStatus("idle");
   }
 
   return (
@@ -175,12 +194,12 @@ export function RecordingStudio() {
           <div className="eyebrow">Demonstrate / 01</div>
           <h1>Record a browser workflow.</h1>
           <p>
-            Capture the work once. Keep the recording local. Then choose exactly
-            when Flowwright should compile it into a validated workflow.
+            Capture the work once. Review evidence. Then explicitly request AI
+            inference.
           </p>
         </div>
         <div className="privacy-badge">
-          <span>◎</span>
+          <span>privacy</span>
           <div>
             <strong>Privacy first</strong>
             <small>
@@ -231,7 +250,7 @@ export function RecordingStudio() {
             <section className="studio-card compile-card">
               <div className="studio-card-header">
                 <div>
-                  <span className="mono-label">Next step</span>
+                  <span className="mono-label">Evidence / inference</span>
                   <h2>Describe what should repeat.</h2>
                 </div>
                 <span className="compile-number">02</span>
@@ -273,28 +292,43 @@ export function RecordingStudio() {
               </div>
               <div className="compile-actions">
                 <button
+                  className="button button-outline"
+                  onClick={processEvidence}
+                  disabled={processingStatus === "processing" || !recordingBlob}
+                >
+                  {processingStatus === "processing"
+                    ? "Processing evidence..."
+                    : "Process evidence"}
+                </button>
+                <button
                   className="button button-amber"
                   onClick={analyzeDemonstration}
-                  disabled={analysisStatus === "analyzing"}
+                  disabled={analysisStatus === "processing" || !processed}
                 >
-                  {analysisStatus === "analyzing"
+                  {analysisStatus === "processing"
                     ? "Analyzing..."
-                    : "Analyze demonstration →"}
+                    : "Analyze my demonstration with AI →"}
                 </button>
+                <Link className="button button-outline" href="/workflows/demo">
+                  Try sample invoice demo
+                </Link>
                 {analysisStatus === "ready" && (
                   <button
                     className="button button-outline"
                     onClick={() => router.push("/workflows/demo")}
                   >
-                    Open compiled workflow
+                    Open inferred workflow
                   </button>
                 )}
               </div>
-              {analysisMessage && (
-                <p className={`analysis-message ${analysisStatus}`}>
-                  {analysisMessage}
+              {message && (
+                <p
+                  className={`analysis-message ${analysisStatus === "error" || processingStatus === "error" ? "error" : analysisStatus === "ready" ? "ready" : ""}`}
+                >
+                  {message}
                 </p>
               )}
+              {processed && <EvidenceReview processed={processed} />}
             </section>
           )}
         </section>
@@ -308,26 +342,72 @@ export function RecordingStudio() {
             <span className="mono-label">Optional extension</span>
             <h3>Capture safer browser events.</h3>
             <p>
-              The Chrome extension can add clicks, navigation, and non-sensitive
-              text fields. It never records password-like inputs.
+              The Chrome extension can add clicks, navigation, submits, and
+              non-sensitive text fields. It never records password-like inputs.
             </p>
             <a
               href="https://github.com/priyankadwibedi/Flowwright/tree/main/docs"
               target="_blank"
               rel="noreferrer"
             >
-              Read the capture guide ↗
+              Read the capture guide →
             </a>
           </div>
           <div className="studio-note warning">
             <span className="mono-label">Prototype boundary</span>
             <p>
-              Flowwright currently compiles controlled browser workflows only.
-              Sensitive actions pause for human approval.
+              AI inference is unavailable without a configured backend and
+              OpenAI key. The sample invoice workflow remains available
+              separately.
             </p>
           </div>
         </aside>
       </div>
     </main>
+  );
+}
+
+function EvidenceReview({ processed }: { processed: ProcessedDemonstration }) {
+  return (
+    <div className="evidence-review" aria-live="polite">
+      <div className="evidence-review-header">
+        <span className="mono-label">Evidence review</span>
+        <span>
+          {processed.duration_seconds.toFixed(1)}s ·{" "}
+          {processed.evidence_timeline.length} items
+        </span>
+      </div>
+      <div className="frame-strip">
+        {processed.frames.map((frame) => (
+          <figure key={frame.id}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`data:${frame.mime_type};base64,${frame.image_base64}`}
+              alt={`Captured frame at ${frame.timestamp_seconds.toFixed(1)} seconds`}
+            />
+            <figcaption>{frame.timestamp_seconds.toFixed(1)}s</figcaption>
+          </figure>
+        ))}
+      </div>
+      <div className="transcript-panel">
+        <span className="mono-label">Transcript</span>
+        <p>
+          {processed.transcript ||
+            "Transcription unavailable. No placeholder transcript was inserted."}
+        </p>
+        <small>
+          {processed.transcription_status} · audio {processed.audio_status}
+        </small>
+      </div>
+      <div className="evidence-timeline">
+        {processed.evidence_timeline.slice(0, 16).map((item) => (
+          <div key={item.id}>
+            <span>{item.timestamp_seconds.toFixed(1)}s</span>
+            <b>{item.source}</b>
+            <p>{item.content}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

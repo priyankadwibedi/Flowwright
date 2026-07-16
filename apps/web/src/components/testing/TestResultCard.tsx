@@ -1,10 +1,10 @@
-import type { WorkflowTest } from "@flowwright/workflow-schema";
+import type { TestExecution } from "../../lib/validation";
 
 export function TestResultCard({
   result,
   index,
 }: {
-  result: WorkflowTest & { duration?: string; confidence?: string };
+  result: TestExecution;
   index: number;
 }) {
   const statusLabel = result.status.replace("_", " ");
@@ -31,8 +31,8 @@ export function TestResultCard({
       <p className="result-explanation">{result.explanation}</p>
       <div className="result-evidence">
         <span>{evidence}</span>
-        <span>{result.duration ?? "deterministic"}</span>
-        <span>{result.confidence ?? "schema validated"}</span>
+        <span>{result.duration_ms} ms</span>
+        <span>runtime evidence</span>
       </div>
     </article>
   );

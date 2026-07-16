@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Protocol
 
-from app.models.workflow import WorkflowIR
+from app.models.workflow import ProcessedDemonstration, WorkflowIR
 
 
 class WorkflowAnalyzer(Protocol):
@@ -13,5 +13,6 @@ class WorkflowAnalyzer(Protocol):
         transcript: str | None = None,
         browser_event_log: list[Mapping[str, object]] | None = None,
         screenshots: list[str] | None = None,
+        processed_demonstration: ProcessedDemonstration | None = None,
     ) -> WorkflowIR:
         """Compile a demonstration into validated WorkflowIR data."""

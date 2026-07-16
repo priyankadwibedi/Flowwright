@@ -26,7 +26,7 @@ export function WorkflowInspector({
         </div>
         <div>
           <span>Confidence</span>
-          <b>{Math.round(workflow.confidence * 100)}%</b>
+          <b>{Math.round(step.confidence * 100)}%</b>
         </div>
         <div>
           <span>AI required</span>
@@ -49,6 +49,12 @@ export function WorkflowInspector({
           {step.output_refs.length
             ? step.output_refs.join(", ")
             : "No persisted output"}
+        </p>
+        <span>Evidence IDs</span>
+        <p>
+          {step.evidence_ids.length
+            ? step.evidence_ids.join(", ")
+            : "No direct evidence reference"}
         </p>
       </div>
     </div>

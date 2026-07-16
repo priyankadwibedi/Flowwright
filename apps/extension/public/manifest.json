@@ -5,11 +5,11 @@
   "description": "Capture safe browser events for a Flowwright demonstration.",
   "permissions": ["activeTab", "storage", "downloads"],
   "action": { "default_popup": "popup.html" },
-  "background": { "service_worker": "../dist/background.js", "type": "module" },
+  "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["../dist/content.js"],
+      "js": ["content.js"],
       "run_at": "document_start"
     }
   ],

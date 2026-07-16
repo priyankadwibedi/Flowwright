@@ -6,7 +6,8 @@ import {
   type WorkflowIR,
   type WorkflowStep,
 } from "@flowwright/workflow-schema";
-import { API_URL } from "../../lib/config";
+import { API_CONFIGURED, API_URL } from "../../lib/config";
+import { sampleWorkflow } from "../../lib/sampleWorkflow";
 import { WorkflowCanvas } from "../workflow/WorkflowCanvas";
 import { WorkflowInspector } from "../workflow/WorkflowInspector";
 import { WorkflowLegend } from "../workflow/WorkflowLegend";
@@ -15,7 +16,14 @@ export function ProductDemo() {
   const [workflow, setWorkflow] = useState<WorkflowIR | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usingStaticSample, setUsingStaticSample] = useState(false);
   useEffect(() => {
+    if (!API_CONFIGURED || !API_URL) {
+      setWorkflow(sampleWorkflow);
+      setSelectedId(sampleWorkflow.steps[0]?.id ?? null);
+      setUsingStaticSample(true);
+      return;
+    }
     fetch(`${API_URL}/api/v1/workflows/demo`)
       .then(async (response) => {
         if (!response.ok)
@@ -26,11 +34,11 @@ export function ProductDemo() {
         setWorkflow(value);
         setSelectedId(value.steps[0]?.id ?? null);
       })
-      .catch((reason: unknown) =>
-        setError(
-          reason instanceof Error ? reason.message : "Unable to load demo",
-        ),
-      );
+      .catch(() => {
+        setWorkflow(sampleWorkflow);
+        setSelectedId(sampleWorkflow.steps[0]?.id ?? null);
+        setUsingStaticSample(true);
+      });
   }, []);
   const selectedStep = useMemo<WorkflowStep | null>(
     () => workflow?.steps.find((step) => step.id === selectedId) ?? null,
@@ -61,13 +69,17 @@ export function ProductDemo() {
               <span>
                 <b>
                   {workflow
-                    ? "Workflow compiled"
+                    ? usingStaticSample
+                      ? "Static sample workflow"
+                      : "Workflow compiled"
                     : error
                       ? "Demo unavailable"
                       : "Loading workflow"}
                 </b>
                 <small>
-                  {error ?? "Validated against the WorkflowIR schema"}
+                  {usingStaticSample
+                    ? "The live backend is unavailable. You are viewing the static sample workflow."
+                    : (error ?? "Validated against the WorkflowIR schema")}
                 </small>
               </span>
             </div>

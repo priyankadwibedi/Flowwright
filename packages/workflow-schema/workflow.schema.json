@@ -26,6 +26,13 @@
           "minLength": 1,
           "title": "Step Id",
           "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
         }
       },
       "required": ["id", "name", "description", "trigger", "step_id"],
@@ -63,6 +70,32 @@
           "minLength": 1,
           "title": "False Step Id",
           "type": "string"
+        },
+        "source_step_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Step Id"
+        },
+        "confidence": {
+          "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
         }
       },
       "required": [
@@ -74,6 +107,51 @@
         "false_step_id"
       ],
       "title": "WorkflowDecision",
+      "type": "object"
+    },
+    "WorkflowEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "source_step_id": {
+          "minLength": 1,
+          "title": "Source Step Id",
+          "type": "string"
+        },
+        "target_step_id": {
+          "minLength": 1,
+          "title": "Target Step Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["success", "failure", "true", "false", "review", "approval"],
+          "title": "Kind",
+          "type": "string"
+        },
+        "condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Condition"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": ["id", "source_step_id", "target_step_id", "kind", "label"],
+      "title": "WorkflowEdge",
       "type": "object"
     },
     "WorkflowInput": {
@@ -182,6 +260,20 @@
         "requires_approval": {
           "title": "Requires Approval",
           "type": "boolean"
+        },
+        "confidence": {
+          "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
         }
       },
       "required": [
@@ -201,6 +293,7 @@
     },
     "WorkflowTest": {
       "additionalProperties": false,
+      "description": "A static test case; runtime status is returned by TestRunResponse.",
       "properties": {
         "id": {
           "minLength": 1,
@@ -235,24 +328,53 @@
           "title": "Actual Outcome"
         },
         "status": {
+          "default": "pending",
           "enum": ["pending", "passed", "failed", "human_review"],
           "title": "Status",
           "type": "string"
         },
         "explanation": {
+          "default": "",
           "title": "Explanation",
           "type": "string"
         }
       },
-      "required": [
-        "id",
-        "name",
-        "input_case",
-        "expected_outcome",
-        "status",
-        "explanation"
-      ],
+      "required": ["id", "name", "input_case", "expected_outcome"],
       "title": "WorkflowTest",
+      "type": "object"
+    },
+    "WorkflowUncertainty": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "affected_step_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Step Ids",
+          "type": "array"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": ["id", "question", "reason", "affected_step_ids", "required"],
+      "title": "WorkflowUncertainty",
       "type": "object"
     },
     "WorkflowVariable": {
@@ -289,6 +411,20 @@
         "constant": {
           "title": "Constant",
           "type": "boolean"
+        },
+        "confidence": {
+          "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
         }
       },
       "required": [
@@ -359,6 +495,20 @@
         "$ref": "#/$defs/WorkflowApproval"
       },
       "title": "Approvals",
+      "type": "array"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/WorkflowEdge"
+      },
+      "title": "Edges",
+      "type": "array"
+    },
+    "uncertainties": {
+      "items": {
+        "$ref": "#/$defs/WorkflowUncertainty"
+      },
+      "title": "Uncertainties",
       "type": "array"
     },
     "tests": {

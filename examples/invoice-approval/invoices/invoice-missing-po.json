@@ -4,6 +4,6 @@
   "purchase_order": null,
   "date": "2026-07-03",
   "currency": "USD",
-  "total": 420.00,
+  "total": 420.0,
   "field_confidence": 0.97
 }

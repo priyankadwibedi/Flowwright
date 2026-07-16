@@ -220,15 +220,82 @@
       "step_id": "human_review"
     }
   ],
+  "edges": [
+    {
+      "id": "upload-to-extract",
+      "source_step_id": "invoice_upload",
+      "target_step_id": "extract_fields",
+      "kind": "success",
+      "condition": null,
+      "label": "uploaded"
+    },
+    {
+      "id": "extract-to-lookup",
+      "source_step_id": "extract_fields",
+      "target_step_id": "lookup_po",
+      "kind": "true",
+      "condition": "required fields present",
+      "label": "fields readable"
+    },
+    {
+      "id": "extract-to-review",
+      "source_step_id": "extract_fields",
+      "target_step_id": "human_review",
+      "kind": "review",
+      "condition": "required fields missing or unreadable",
+      "label": "needs review"
+    },
+    {
+      "id": "lookup-to-compare",
+      "source_step_id": "lookup_po",
+      "target_step_id": "compare_totals",
+      "kind": "success",
+      "condition": "purchase order found",
+      "label": "PO found"
+    },
+    {
+      "id": "lookup-to-review",
+      "source_step_id": "lookup_po",
+      "target_step_id": "human_review",
+      "kind": "review",
+      "condition": "purchase order missing",
+      "label": "PO missing"
+    },
+    {
+      "id": "compare-to-approve",
+      "source_step_id": "compare_totals",
+      "target_step_id": "approve_invoice",
+      "kind": "approval",
+      "condition": "invoice_total == po_total",
+      "label": "matches → approval"
+    },
+    {
+      "id": "compare-to-exception",
+      "source_step_id": "compare_totals",
+      "target_step_id": "flag_exception",
+      "kind": "false",
+      "condition": "invoice_total != po_total",
+      "label": "mismatch → exception"
+    }
+  ],
+  "uncertainties": [
+    {
+      "id": "exception-delivery",
+      "question": "Should an exception be saved as a draft or sent for review?",
+      "reason": "The demonstration shows a flagged mismatch but does not establish a delivery channel.",
+      "affected_step_ids": ["flag_exception"],
+      "required": false
+    }
+  ],
   "tests": [
     {
       "id": "exact_match",
       "name": "Matching invoice",
       "input_case": { "invoice_file": "invoice-exact-match.json" },
-      "expected_outcome": "approved",
-      "actual_outcome": "approved",
+      "expected_outcome": "approval_required",
+      "actual_outcome": "approval_required",
       "status": "passed",
-      "explanation": "PO-1001 exists and both totals are 1250.00 USD; the approval gate is reached."
+      "explanation": "PO-1001 exists and both totals are 1250.00 USD; an explicit human approval gate is reached."
     },
     {
       "id": "amount_mismatch",

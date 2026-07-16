@@ -21,4 +21,5 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(workflows.router)
+app.include_router(workflows.invoices_router)
 app.include_router(media.router)

@@ -4,6 +4,7 @@ node_modules/
 .next/
 out/
 dist/
+apps/extension/build/
 coverage/
 *.tsbuildinfo
 pnpm-lock.yaml.tmp

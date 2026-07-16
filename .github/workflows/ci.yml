@@ -17,6 +17,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+      - run: pnpm --filter @flowwright/extension validate
+      - run: pnpm --filter @flowwright/web install:browsers
+      - run: pnpm test
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - uses: astral-sh/setup-uv@v6
@@ -24,3 +27,5 @@ jobs:
         run: uv sync --locked
       - working-directory: apps/api
         run: uv run pytest
+      - working-directory: apps/api
+        run: uv run ruff check .

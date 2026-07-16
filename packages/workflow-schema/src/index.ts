@@ -29,6 +29,8 @@ export const workflowVariableSchema = z.object({
   source: z.string().min(1),
   sensitive: z.boolean(),
   constant: z.boolean(),
+  confidence: z.number().min(0).max(1).default(0),
+  evidence_ids: z.array(z.string()).default([]),
 });
 
 export const workflowStepSchema = z.object({
@@ -42,6 +44,8 @@ export const workflowStepSchema = z.object({
   configuration: z.record(z.string(), z.unknown()),
   requires_ai: z.boolean(),
   requires_approval: z.boolean(),
+  confidence: z.number().min(0).max(1).default(0),
+  evidence_ids: z.array(z.string()).default([]),
 });
 
 export const workflowDecisionSchema = z.object({
@@ -51,6 +55,9 @@ export const workflowDecisionSchema = z.object({
   condition: z.string().min(1),
   true_step_id: z.string().min(1),
   false_step_id: z.string().min(1),
+  source_step_id: z.string().nullable().optional(),
+  confidence: z.number().min(0).max(1).default(0),
+  evidence_ids: z.array(z.string()).default([]),
 });
 
 export const workflowApprovalSchema = z.object({
@@ -59,6 +66,24 @@ export const workflowApprovalSchema = z.object({
   description: z.string(),
   trigger: z.string().min(1),
   step_id: z.string().min(1),
+  evidence_ids: z.array(z.string()).default([]),
+});
+
+export const workflowEdgeSchema = z.object({
+  id: z.string().min(1),
+  source_step_id: z.string().min(1),
+  target_step_id: z.string().min(1),
+  kind: z.enum(["success", "failure", "true", "false", "review", "approval"]),
+  condition: z.string().nullable().optional(),
+  label: z.string().min(1),
+});
+
+export const workflowUncertaintySchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  reason: z.string().min(1),
+  affected_step_ids: z.array(z.string()),
+  required: z.boolean(),
 });
 
 export const workflowTestSchema = z.object({
@@ -81,6 +106,8 @@ export const workflowIRSchema = z.object({
   steps: z.array(workflowStepSchema).min(1),
   decisions: z.array(workflowDecisionSchema),
   approvals: z.array(workflowApprovalSchema),
+  edges: z.array(workflowEdgeSchema).default([]),
+  uncertainties: z.array(workflowUncertaintySchema).default([]),
   tests: z.array(workflowTestSchema),
   confidence: z.number().min(0).max(1),
   created_at: z.iso.datetime({ offset: true }),
@@ -89,3 +116,5 @@ export const workflowIRSchema = z.object({
 export type WorkflowIR = z.infer<typeof workflowIRSchema>;
 export type WorkflowStep = z.infer<typeof workflowStepSchema>;
 export type WorkflowTest = z.infer<typeof workflowTestSchema>;
+export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>;
+export type WorkflowUncertainty = z.infer<typeof workflowUncertaintySchema>;

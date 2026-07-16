@@ -8,6 +8,7 @@
     "build": "next build",
     "lint": "eslint src tests --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "install:browsers": "playwright install --with-deps chromium",
     "test:e2e": "playwright test"
   },
   "dependencies": {

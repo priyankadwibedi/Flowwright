@@ -5,6 +5,6 @@
   "purchase_order": "PO-1004",
   "date": "2026-07-04",
   "currency": "USD",
-  "total": 640.00,
+  "total": 640.0,
   "field_confidence": 0.54
 }

@@ -25,6 +25,7 @@ jobs:
         run: pnpm --filter @flowwright/web build
         env:
           NEXT_PUBLIC_BASE_PATH: /Flowwright
+          NEXT_PUBLIC_FLOWWRIGHT_API_URL: ${{ vars.FLOWWRIGHT_API_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

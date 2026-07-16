@@ -21,8 +21,8 @@ export function HeroPanel() {
         </Link>
       </div>
       <div className="trust-line">
-        <span></span> Demonstration <i>→</i> Workflow IR <i>→</i> Generated
-        code <i>→</i> Tests
+        <span></span> Demonstration <i>→</i> Workflow IR <i>→</i> Generated code{" "}
+        <i>→</i> Tests
       </div>
     </div>
   );

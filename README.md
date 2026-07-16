@@ -27,15 +27,15 @@ The core innovation is a compiler boundary: human evidence is normalized into a 
 
 Working today:
 
-- Next.js dashboard with `/`, `/record`, `/workflows/demo`, and `/tests`.
+- Next.js dashboard with `/`, `/record`, `/workflows/demo`, `/tests`, `/code`, and `/generated/invoice-processor`.
 - Local screen recording with `getDisplayMedia`, preview, download, elapsed time, and optional event-log import.
-- FastAPI health, demo workflow, analysis, deterministic test, and ephemeral key-frame endpoints.
+- FastAPI health, sample workflow, strict AI analysis, real test execution, evidence processing, trusted artifact, and invoice runtime endpoints.
 - Pydantic WorkflowIR, matching Zod schema, synthetic invoice fixtures, and generated graph using `@xyflow/react`.
-- Chrome Manifest V3 extension scaffold that captures safe clicks, navigation, and non-sensitive input events and exports JSON.
+- Chrome Manifest V3 extension build that captures safe clicks, navigation, and non-sensitive input events, persists the local event log, and exports JSON.
 - GitHub Pages deployment of the Next.js frontend as a static export.
 - Demo mode works without an OpenAI key.
 
-Roadmap: production browser executor, richer event normalization, OpenAI-backed compilation with real demonstrations, generated application packaging, persistent storage, and deployment automation. These are not claimed as complete.
+Roadmap: production browser executor, richer event normalization, persistent storage, and deployment automation. OpenAI-backed compilation is implemented behind configuration but remains unverified here because no key is available.
 
 The prototype supports a controlled browser workflow only. It does not automate arbitrary desktop applications, autonomously execute sensitive actions, use real financial data, or provide authentication, billing, team collaboration, or enterprise controls.
 
@@ -58,6 +58,8 @@ Node.js 24 LTS, pnpm, Next.js, React, TypeScript, Tailwind CSS, shadcn/ui-compat
 ## Local setup
 
 Prerequisites: Node.js 24 LTS, pnpm 11+, Python 3.12+, uv, and (for video extraction) FFmpeg codecs available to OpenCV.
+
+On Windows, if `pnpm` is not recognized after installing Node.js, run `corepack enable` once and open a new terminal. The repository pins pnpm 11.7.0 through `packageManager`, so local and CI installs use the same version.
 
 ```bash
 pnpm install
@@ -90,7 +92,7 @@ Chrome extension:
 pnpm dev:extension
 ```
 
-Then load `apps/extension` as an unpacked extension in `chrome://extensions` with Developer mode enabled. The extension requires explicit start/stop actions and does not upload event logs.
+Then load `apps/extension/build` as an unpacked extension in `chrome://extensions` with Developer mode enabled. The extension requires explicit start/stop actions and does not upload event logs.
 
 Complete checks:
 
@@ -106,8 +108,12 @@ pnpm check
 
 - `GET /health` — service status.
 - `GET /api/v1/workflows/demo` — validated synthetic invoice WorkflowIR.
-- `POST /api/v1/workflows/analyze` — compile a task description (demo or OpenAI analyzer).
-- `POST /api/v1/workflows/test` — run deterministic invoice tests.
+- `POST /api/v1/workflows/analyze` — compile processed evidence with the configured OpenAI analyzer. Demo mode deliberately returns an explicit unavailable response; use `/workflows/demo` for the checked-in sample.
+- `POST /api/v1/workflows/test` — execute the synthetic invoice cases through the restricted runtime and return a run record.
+- `POST /api/v1/workflows/resolve` — answer workflow uncertainties before generation.
+- `POST /api/v1/workflows/generate` and `GET /api/v1/workflows/{workflow_id}/artifact` — generate/download the trusted invoice artifact.
+- `POST /api/v1/invoices/process` — run one synthetic invoice in the generated mini-application runtime.
+- `POST /api/v1/media/process-demonstration` — extract bounded JPEG frames, optional audio/transcript status, browser events, and a timestamped evidence timeline without persisting media.
 - `POST /api/v1/media/keyframes` — validate a video, extract metadata for a small set of key frames, and delete the temporary file.
 
 ## WorkflowIR example
@@ -127,7 +133,7 @@ The authoritative full schema is `apps/api/app/models/workflow.py`; its JSON Sch
 
 ## Invoice demo
 
-The four synthetic cases are exact match → `approved`, amount mismatch → `exception`, missing purchase order → `human_review`, and unreadable invoice number → `human_review`. Approval remains a human gate even for an exact match.
+The four synthetic cases are exact match → `approval_required`, amount mismatch → `exception`, missing purchase order → `human_review`, and unreadable invoice number → `human_review`. Approval remains a human gate even for an exact match.
 
 ## Testing and security
 
@@ -135,7 +141,7 @@ Run `cd apps/api && uv run pytest` for backend tests, `pnpm --filter @flowwright
 
 ## Deployment guidance
 
-GitHub Pages builds and deploys the Next.js frontend from `apps/web/out` with the `/Flowwright` project-site base path. The FastAPI service targets Railway, Render, or Fly.io. Future PostgreSQL storage can use Neon or Supabase; future media storage can use Cloudflare R2 or Amazon S3. Credentials and deployment actions are intentionally not included.
+GitHub Pages builds and deploys the Next.js frontend static export from `apps/web/out` with the `/Flowwright` project-site base path. To enable live backend actions on Pages, create an Actions repository variable named `FLOWWRIGHT_API_URL`; the Pages workflow injects it as `NEXT_PUBLIC_FLOWWRIGHT_API_URL`. Without that variable, the public site remains a static product/demo surface and clearly reports unavailable backend actions. The FastAPI service targets Railway, Render, or Fly.io. Future PostgreSQL storage can use Neon or Supabase; future media storage can use Cloudflare R2 or Amazon S3. Credentials and deployment actions are intentionally not included.
 
 ## Roadmap and hackathon demo flow
 
