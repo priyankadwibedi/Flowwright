@@ -2,6 +2,8 @@
 
 import base64
 import os
+import shutil
+import subprocess
 import tempfile
 from contextlib import suppress
 from pathlib import Path
@@ -14,6 +16,95 @@ from app.models.workflow import CapturedFrame
 
 class KeyframeExtractionError(RuntimeError):
     """Raised when a supported video cannot be decoded or encoded."""
+
+
+def _ffprobe_duration(video_path: Path) -> float:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return 0.0
+    try:
+        result = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=15,
+        )
+        return max(0.0, float(result.stdout.strip())) if result.returncode == 0 else 0.0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0.0
+
+
+def _extract_with_ffmpeg(
+    video_path: Path,
+    max_keyframes: int,
+    max_width: int,
+) -> tuple[float, list[CapturedFrame]]:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise KeyframeExtractionError(
+            "OpenCV could not decode this video and FFmpeg is not installed on the API host"
+        )
+    duration = _ffprobe_duration(video_path)
+    sample_rate = max_keyframes / max(duration, 1.0)
+    with tempfile.TemporaryDirectory(prefix="flowwright-frames-") as directory:
+        output_pattern = str(Path(directory) / "frame-%03d.jpg")
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-i",
+                str(video_path),
+                "-vf",
+                f"fps={sample_rate:.6f},scale={max_width}:-2:force_original_aspect_ratio=decrease",
+                "-frames:v",
+                str(max_keyframes),
+                "-q:v",
+                "3",
+                "-y",
+                output_pattern,
+            ],
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise KeyframeExtractionError(
+                "FFmpeg failed while extracting key frames from the uploaded video"
+            )
+        frames: list[CapturedFrame] = []
+        for frame_index, image_path in enumerate(sorted(Path(directory).glob("frame-*.jpg"))):
+            image = cv2.imread(str(image_path))
+            if image is None:
+                continue
+            height, width = image.shape[:2]
+            encoded_success, encoded = cv2.imencode(".jpg", image)
+            if not encoded_success:
+                continue
+            frames.append(
+                CapturedFrame(
+                    id=f"frame-ffmpeg-{frame_index}",
+                    frame_index=frame_index,
+                    timestamp_seconds=round(frame_index / sample_rate, 3),
+                    width=int(width),
+                    height=int(height),
+                    mime_type="image/jpeg",
+                    image_base64=base64.b64encode(encoded.tobytes()).decode("ascii"),
+                )
+            )
+        if not frames:
+            raise KeyframeExtractionError("FFmpeg produced no readable key frames")
+        return duration, frames
 
 
 def extract_keyframes(
@@ -38,7 +129,7 @@ def extract_keyframes(
     try:
         capture = cv2.VideoCapture(str(temporary_path))
         if not capture.isOpened():
-            raise KeyframeExtractionError("FFmpeg/OpenCV could not open the uploaded video")
+            return _extract_with_ffmpeg(temporary_path, max_keyframes, max_width)
         frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
         if frame_count <= 0:
@@ -78,7 +169,7 @@ def extract_keyframes(
                 )
             )
         if not frames:
-            raise KeyframeExtractionError("No key frames could be decoded")
+            return _extract_with_ffmpeg(temporary_path, max_keyframes, max_width)
         return duration, frames
     except cv2.error as exc:
         raise KeyframeExtractionError("OpenCV failed while decoding the uploaded video") from exc

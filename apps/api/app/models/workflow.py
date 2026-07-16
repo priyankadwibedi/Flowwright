@@ -360,3 +360,16 @@ class ExecutableWorkflow(BaseModel):
 
 class InvoiceProcessRequest(BaseModel):
     invoice_file: str = Field(min_length=1)
+
+
+class InvoiceApprovalRequest(BaseModel):
+    invoice_file: str = Field(min_length=1)
+    confirm: bool
+
+
+class InvoiceApprovalResponse(BaseModel):
+    invoice_file: str
+    status: Literal["approved"]
+    message: str
+    approval_record_id: str
+    protected_action_executed: bool = False

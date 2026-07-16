@@ -33,6 +33,20 @@ def test_invoice_runtime_and_trusted_artifact(client):
     assert response.json()["status"] == "approval_required"
     assert response.json()["protected_action_executed"] is False
 
+    approval = client.post(
+        "/api/v1/invoices/approve",
+        json={"invoice_file": "invoice-exact-match.json", "confirm": True},
+    )
+    assert approval.status_code == 200
+    assert approval.json()["status"] == "approved"
+    assert approval.json()["protected_action_executed"] is False
+
+    blocked_approval = client.post(
+        "/api/v1/invoices/approve",
+        json={"invoice_file": "invoice-amount-mismatch.json", "confirm": True},
+    )
+    assert blocked_approval.status_code == 422
+
     artifact = client.post(
         "/api/v1/workflows/generate",
         json=client.get("/api/v1/workflows/demo").json(),

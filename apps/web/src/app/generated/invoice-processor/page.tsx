@@ -23,15 +23,28 @@ type Result = {
   protected_action_executed: boolean;
 };
 
+type ApprovalResponse = {
+  invoice_file: string;
+  status: "approved";
+  message: string;
+  approval_record_id: string;
+  protected_action_executed: false;
+};
+
 export default function GeneratedInvoiceProcessorPage() {
   const [invoiceFile, setInvoiceFile] = useState<InvoiceCase>(cases[0][0]);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [approvalConfirmed, setApprovalConfirmed] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [approval, setApproval] = useState<ApprovalResponse | null>(null);
 
   async function process() {
     setRunning(true);
     setError(null);
+    setApproval(null);
+    setApprovalConfirmed(false);
     try {
       const response = await fetch(`${API_URL}/api/v1/invoices/process`, {
         body: JSON.stringify({ invoice_file: invoiceFile }),
@@ -47,6 +60,33 @@ export default function GeneratedInvoiceProcessorPage() {
       );
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function approve() {
+    if (!approvalConfirmed || result?.status !== "approval_required") return;
+    setApproving(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/invoices/approve`, {
+        body: JSON.stringify({ confirm: true, invoice_file: invoiceFile }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as
+        { detail?: string } | ApprovalResponse;
+      if (!response.ok) {
+        throw new Error(
+          "detail" in payload && payload.detail
+            ? payload.detail
+            : `Approval failed (${response.status})`,
+        );
+      }
+      setApproval(payload as ApprovalResponse);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Approval failed");
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -109,6 +149,42 @@ export default function GeneratedInvoiceProcessorPage() {
                     ? "Protected action executed"
                     : "Protected actions were not executed"}
                 </strong>
+                {result.status === "approval_required" && !approval && (
+                  <div className="approval-panel">
+                    <label className="toggle-row">
+                      <input
+                        type="checkbox"
+                        checked={approvalConfirmed}
+                        onChange={(event) =>
+                          setApprovalConfirmed(event.target.checked)
+                        }
+                      />
+                      <span className="toggle-ui" />
+                      <span>
+                        I reviewed this synthetic invoice and approve it.
+                      </span>
+                    </label>
+                    <button
+                      className="button button-amber"
+                      onClick={() => void approve()}
+                      disabled={!approvalConfirmed || approving}
+                    >
+                      {approving
+                        ? "Recording approval…"
+                        : "Record human approval"}
+                    </button>
+                    <small>
+                      No external approval or payment action will be executed.
+                    </small>
+                  </div>
+                )}
+                {approval && (
+                  <div className="approval-confirmation" role="status">
+                    <strong>Approval recorded</strong>
+                    <span>{approval.approval_record_id}</span>
+                    <small>{approval.message}</small>
+                  </div>
+                )}
               </div>
             )}
           </section>

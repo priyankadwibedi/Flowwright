@@ -95,3 +95,11 @@ def process_invoice(
 
 def process_fixture(filename: str) -> WorkflowResult:
     return process_invoice(load_invoice(filename), load_purchase_orders())
+
+
+def approve_fixture(filename: str) -> str:
+    """Record an explicit approval for synthetic data without external side effects."""
+    result = process_fixture(filename)
+    if result.status is not WorkflowStatus.APPROVAL_REQUIRED:
+        raise ValueError("Only an exact-match synthetic invoice can be approved")
+    return f"approval-{filename.removesuffix('.json')}"

@@ -5,6 +5,8 @@ from app.models.test_result import TestRunResponse
 from app.models.workflow import (
     AnalyzeRequest,
     ExecutableWorkflow,
+    InvoiceApprovalRequest,
+    InvoiceApprovalResponse,
     InvoiceProcessRequest,
     ResolveRequest,
     ResolveResponse,
@@ -12,7 +14,7 @@ from app.models.workflow import (
 )
 from app.services.code_generator import artifact_zip, generate_invoice_artifact
 from app.services.demo_analyzer import DemoWorkflowAnalyzer
-from app.services.invoice_runtime import process_fixture
+from app.services.invoice_runtime import approve_fixture, process_fixture
 from app.services.openai_analyzer import OpenAIWorkflowAnalyzer
 from app.services.workflow_tester import run_invoice_tests
 
@@ -120,3 +122,25 @@ def process_invoice(request: InvoiceProcessRequest) -> dict[str, object]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"invoice_file": request.invoice_file, **result.model_dump(mode="json")}
+
+
+@invoices_router.post("/approve", response_model=InvoiceApprovalResponse)
+def approve_invoice(request: InvoiceApprovalRequest) -> InvoiceApprovalResponse:
+    if not request.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Explicit confirmation is required before recording approval",
+        )
+    try:
+        record_id = approve_fixture(request.invoice_file)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return InvoiceApprovalResponse(
+        invoice_file=request.invoice_file,
+        status="approved",
+        message="Synthetic approval recorded. No external action was executed.",
+        approval_record_id=record_id,
+    )

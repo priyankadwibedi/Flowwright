@@ -1161,6 +1161,36 @@ summary:focus-visible {
   color: var(--color-muted);
   margin: 5px 0;
 }
+.approval-panel {
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.approval-panel .toggle-row {
+  align-items: flex-start;
+  font-size: 0.9rem;
+}
+.approval-panel small,
+.approval-confirmation small {
+  color: var(--color-muted);
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+.approval-confirmation {
+  background: #d6eadf;
+  border-radius: 12px;
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 12px;
+}
+.approval-confirmation span {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
 .result-approval_required {
   border-left-color: var(--color-warning);
 }

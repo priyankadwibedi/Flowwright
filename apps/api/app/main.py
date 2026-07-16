@@ -19,6 +19,19 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    """Provide a friendly landing response for the deployed API hostname."""
+    return {
+        "service": settings.app_name,
+        "status": "ok",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 app.include_router(health.router)
 app.include_router(workflows.router)
 app.include_router(workflows.invoices_router)

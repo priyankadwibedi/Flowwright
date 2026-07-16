@@ -106,6 +106,7 @@ pnpm check
 
 ## API
 
+- `GET /` — deployed API landing response with links to health and OpenAPI docs.
 - `GET /health` — service status.
 - `GET /api/v1/workflows/demo` — validated synthetic invoice WorkflowIR.
 - `POST /api/v1/workflows/analyze` — compile processed evidence with the configured OpenAI analyzer. Demo mode deliberately returns an explicit unavailable response; use `/workflows/demo` for the checked-in sample.
@@ -113,6 +114,7 @@ pnpm check
 - `POST /api/v1/workflows/resolve` — answer workflow uncertainties before generation.
 - `POST /api/v1/workflows/generate` and `GET /api/v1/workflows/{workflow_id}/artifact` — generate/download the trusted invoice artifact.
 - `POST /api/v1/invoices/process` — run one synthetic invoice in the generated mini-application runtime.
+- `POST /api/v1/invoices/approve` — record an explicit human approval for an exact-match synthetic invoice; no external action is executed.
 - `POST /api/v1/media/process-demonstration` — extract bounded JPEG frames, optional audio/transcript status, browser events, and a timestamped evidence timeline without persisting media.
 - `POST /api/v1/media/keyframes` — validate a video, extract metadata for a small set of key frames, and delete the temporary file.
 

@@ -108,8 +108,11 @@ export function RecordingStudio() {
           body: media,
         },
       );
-      if (!response.ok)
-        throw new Error(`Evidence processing failed (${response.status}).`);
+      if (!response.ok) {
+        throw new Error(
+          await describeApiError(response, "Evidence processing failed"),
+        );
+      }
       const payload = processedDemonstrationSchema.parse(await response.json());
       setProcessed(payload);
       setProcessingStatus("ready");
@@ -154,8 +157,11 @@ export function RecordingStudio() {
           transcript: processed.transcript || undefined,
         }),
       });
-      if (!response.ok)
-        throw new Error(`AI analysis unavailable (${response.status}).`);
+      if (!response.ok) {
+        throw new Error(
+          await describeApiError(response, "AI analysis unavailable"),
+        );
+      }
       const workflow = workflowIRSchema.parse(await response.json());
       sessionStorage.setItem("flowwright.workflow", JSON.stringify(workflow));
       setAnalysisStatus("ready");
@@ -365,6 +371,21 @@ export function RecordingStudio() {
       </div>
     </main>
   );
+}
+
+async function describeApiError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const payload = (await response.json()) as { detail?: unknown };
+    if (typeof payload.detail === "string" && payload.detail) {
+      return `${fallback} (${response.status}): ${payload.detail}`;
+    }
+  } catch {
+    // Keep the status-based fallback when the server did not return JSON.
+  }
+  return `${fallback} (${response.status})`;
 }
 
 function EvidenceReview({ processed }: { processed: ProcessedDemonstration }) {
