@@ -7,5 +7,6 @@ export default defineConfig({
     env: { NEXT_PUBLIC_FLOWWRIGHT_API_URL: "http://localhost:8000" },
     url: "http://localhost:3000",
     reuseExistingServer: true,
+    timeout: 180_000,
   },
 });

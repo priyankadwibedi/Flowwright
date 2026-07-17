@@ -35,7 +35,18 @@ export function WorkflowGraph({ workflow }: { workflow: WorkflowIR }) {
         background: "#fbfcff",
       }}
     >
-      <ReactFlow nodes={nodes} edges={edges} fitView>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        fitView
+        panOnDrag
+        zoomOnScroll
+        zoomOnPinch
+        nodesDraggable={false}
+        nodesConnectable={false}
+        selectNodesOnDrag={false}
+        preventScrolling
+      >
         <Background />
         <Controls />
       </ReactFlow>

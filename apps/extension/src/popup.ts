@@ -1,18 +1,42 @@
 const toggle = document.querySelector<HTMLButtonElement>("#toggle")!;
 const state = document.querySelector<HTMLParagraphElement>("#state")!;
-let recording = false;
-toggle.addEventListener("click", async () => {
-  recording = !recording;
+
+async function refresh() {
+  const response = await chrome.runtime.sendMessage({ type: "FLOWWRIGHT_GET_SESSION" });
+  const recording = Boolean(response?.session?.recording);
   toggle.textContent = recording ? "Stop capture" : "Start capture";
   state.textContent = recording
-    ? "Recording safe browser events…"
-    : "Capture is off.";
+    ? `Recording safe browser events… (${response.session.events?.length ?? 0} events)`
+    : "Capture is off. Closing this popup does not stop an active session.";
+}
+
+toggle.addEventListener("click", async () => {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tabs[0]?.id)
-    chrome.tabs.sendMessage(tabs[0].id, {
-      type: recording ? "FLOWWRIGHT_START" : "FLOWWRIGHT_STOP",
+  const tabId = tabs[0]?.id;
+  if (!tabId) return;
+  const current = await chrome.runtime.sendMessage({ type: "FLOWWRIGHT_GET_SESSION" });
+  if (current?.session?.recording) {
+    await chrome.runtime.sendMessage({ type: "FLOWWRIGHT_STOP" });
+  } else {
+    if (current?.session?.events?.length) {
+      const confirmed = window.confirm(
+        "Start a new recording? This clears the previous capture session.",
+      );
+      if (!confirmed) return;
+    }
+    const result = await chrome.runtime.sendMessage({
+      type: "FLOWWRIGHT_START",
+      tabId,
+      confirmReset: true,
     });
+    if (result?.error === "host_permission_denied") {
+      state.textContent = "Host permission was denied for this tab.";
+      return;
+    }
+  }
+  await refresh();
 });
+
 document
   .querySelector<HTMLButtonElement>("#export")!
   .addEventListener("click", () => {
@@ -29,3 +53,5 @@ document
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
   });
+
+void refresh();

@@ -5,12 +5,12 @@ const safetyItems = [
     "API keys remain on the backend and never enter the browser bundle.",
   ],
   [
-    "Local recordings",
-    "Recordings stay local until you deliberately analyze a demonstration.",
+    "Evidence upload consent",
+    "Your recording stays local until you choose Process evidence. Processing uploads it temporarily to the configured backend; selected frames and transcript text may be sent to the configured AI provider.",
   ],
   [
     "Test before use",
-    "Generated workflows are checked against expected and unexpected inputs.",
+    "Generated workflow artifacts are executed in an isolated temporary directory before reuse.",
   ],
   [
     "Synthetic data",

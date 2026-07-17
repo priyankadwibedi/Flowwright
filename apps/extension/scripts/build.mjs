@@ -16,22 +16,14 @@ await new Promise((resolvePromise, reject) => {
     shell: process.platform === "win32",
   });
   child.on("error", reject);
-  child.on("exit", (code) => (code === 0 ? resolvePromise() : reject(new Error(`tsc exited with ${code}`))));
+  child.on("exit", (code) =>
+    code === 0 ? resolvePromise() : reject(new Error(`tsc exited with ${code}`)),
+  );
 });
 
 await cp(resolve(root, "public/popup.css"), resolve(build, "popup.css"));
 const popup = await readFile(resolve(root, "public/popup.html"), "utf8");
 await writeFile(resolve(build, "popup.html"), popup, "utf8");
-const manifest = {
-  manifest_version: 3,
-  name: "Flowwright Event Capture",
-  version: "0.1.0",
-  description: "Capture safe browser events for a Flowwright demonstration.",
-  permissions: ["activeTab", "storage", "downloads"],
-  action: { default_popup: "popup.html" },
-  background: { service_worker: "background.js", type: "module" },
-  content_scripts: [{ matches: ["<all_urls>"], js: ["content.js"], run_at: "document_start" }],
-  host_permissions: ["<all_urls>"],
-};
-await writeFile(resolve(build, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+const manifest = await readFile(resolve(root, "public/manifest.json"), "utf8");
+await writeFile(resolve(build, "manifest.json"), manifest, "utf8");
 console.log(`Built self-contained extension at ${build}`);

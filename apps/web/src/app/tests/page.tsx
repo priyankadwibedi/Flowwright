@@ -7,7 +7,7 @@ import { AnnouncementBar } from "../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../components/marketing/MarketingHeader";
 import { TestResultCard } from "../../components/testing/TestResultCard";
 import { TestSummary } from "../../components/testing/TestSummary";
-import { API_URL } from "../../lib/config";
+import { API_CONFIGURED, API_URL, apiUnavailableMessage } from "../../lib/config";
 import {
   testRunResponseSchema,
   type TestRunResponse,
@@ -17,9 +17,17 @@ export default function TestsPage() {
   const [workflow, setWorkflow] = useState<WorkflowIR | null>(null);
   const [run, setRun] = useState<TestRunResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const executeTests = useCallback(async (workflowData: WorkflowIR) => {
+    if (!API_CONFIGURED || !API_URL) {
+      throw new Error(apiUnavailableMessage());
+    }
+    if (workflowData.workflow_kind !== "invoice_approval") {
+      throw new Error(
+        "Unsupported workflow kind. Generated artifact tests run only for invoice_approval.",
+      );
+    }
     const response = await fetch(`${API_URL}/api/v1/workflows/test`, {
       body: JSON.stringify(workflowData),
       headers: { "Content-Type": "application/json" },
@@ -32,14 +40,25 @@ export default function TestsPage() {
   }, []);
 
   const loadAndRun = useCallback(async () => {
+    if (!API_CONFIGURED || !API_URL) {
+      setError(apiUnavailableMessage());
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/api/v1/workflows/demo`);
-      if (!response.ok) {
-        throw new Error(`Workflow request failed (${response.status})`);
+      const stored = window.sessionStorage.getItem("flowwright.workflow");
+      let workflowData: WorkflowIR;
+      if (stored) {
+        workflowData = workflowIRSchema.parse(JSON.parse(stored));
+      } else {
+        const response = await fetch(`${API_URL}/api/v1/workflows/demo`);
+        if (!response.ok) {
+          throw new Error(`Workflow request failed (${response.status})`);
+        }
+        workflowData = workflowIRSchema.parse(await response.json());
       }
-      const workflowData = workflowIRSchema.parse(await response.json());
       setWorkflow(workflowData);
       setRun(await executeTests(workflowData));
     } catch (reason: unknown) {
@@ -65,16 +84,17 @@ export default function TestsPage() {
         <div className="tests-heading">
           <div>
             <div className="eyebrow">Verification / 04</div>
-            <h1>Test the workflow before it runs.</h1>
+            <h1>Prove the workflow on new inputs.</h1>
             <p>
-              Each synthetic invoice case is executed by the restricted runtime.
-              Protected approval actions are never performed.
+              Each run writes trusted `workflow.py` and `test_workflow.py`, then
+              executes those generated tests in an isolated temporary directory.
             </p>
           </div>
           <div className="button-row">
             <button
               className="button button-primary"
               onClick={() => void loadAndRun()}
+              disabled={!API_CONFIGURED}
             >
               {loading ? "Running…" : "Rerun tests"}
             </button>
@@ -83,13 +103,19 @@ export default function TestsPage() {
             </Link>
           </div>
         </div>
+        {!API_CONFIGURED && (
+          <div className="notice notice-error" role="alert">
+            {apiUnavailableMessage()} Test execution is disabled without a
+            configured backend.
+          </div>
+        )}
         {error && (
           <div className="notice notice-error" role="alert">
-            {error}. Start the FastAPI backend to execute the real test run.
+            {error}
           </div>
         )}
         {loading && !run && (
-          <div className="loading-state">Executing validated test data…</div>
+          <div className="loading-state">Executing generated artifact tests…</div>
         )}
         {run && (
           <>
@@ -97,6 +123,12 @@ export default function TestsPage() {
             <div className="test-run-meta mono-label">
               Run completed {new Date(run.completed_at).toLocaleTimeString()} ·
               unsafe actions executed: {run.unsafe_actions_executed}
+              {run.compiler_fingerprint
+                ? ` · fingerprint ${run.compiler_fingerprint}`
+                : ""}
+              {run.artifact_execution
+                ? ` · artifact exit ${run.artifact_execution.exit_code}`
+                : ""}
             </div>
             <div className="test-results-grid">
               {run.executions.map((result, index) => (
@@ -109,7 +141,7 @@ export default function TestsPage() {
             </div>
           </>
         )}
-        {workflow && !run && !loading && (
+        {workflow && !run && !loading && API_CONFIGURED && (
           <div className="notice">
             Workflow loaded, but no test result was returned.
           </div>

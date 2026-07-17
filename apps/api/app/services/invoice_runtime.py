@@ -1,46 +1,58 @@
-"""Restricted, auditable invoice runtime shared by tests and the mini-app."""
+"""Restricted invoice runtime backed by the shared InvoiceCompilerConfig interpreter."""
 
 import csv
-from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel
+from app.models.workflow import INVOICE_FIXTURES, WorkflowIR
+from app.services.invoice_compiler import (
+    InvoiceCompilerConfig,
+    extract_invoice_compiler_config,
+)
+from app.services.invoice_interpreter import (
+    InvoiceRecord,
+    PurchaseOrderRecord,
+    WorkflowResult,
+    WorkflowStatus,
+    interpret_invoice,
+)
 
-
-class WorkflowStatus(StrEnum):
-    APPROVAL_REQUIRED = "approval_required"
-    EXCEPTION = "exception"
-    HUMAN_REVIEW = "human_review"
-
-
-class InvoiceRecord(BaseModel):
-    invoice_number: str | None = None
-    purchase_order: str | None = None
-    total: float
-    currency: str = "USD"
-    unreadable_invoice_number: bool = False
-
-
-class PurchaseOrderRecord(BaseModel):
-    purchase_order: str
-    total: float
-    currency: str = "USD"
-
-
-class WorkflowResult(BaseModel):
-    status: WorkflowStatus
-    reason: str
-    expected_total: float | None = None
-    actual_total: float | None = None
-    protected_action_executed: bool = False
+__all__ = [
+    "InvoiceRecord",
+    "PurchaseOrderRecord",
+    "WorkflowResult",
+    "WorkflowStatus",
+    "approve_fixture",
+    "default_config",
+    "load_invoice",
+    "load_purchase_orders",
+    "process_fixture",
+    "process_invoice",
+    "resolve_config",
+]
 
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
+def fixtures_dir() -> Path:
+    return repo_root() / "examples" / "invoice-approval" / "invoices"
+
+
+def resolve_fixture_path(filename: str) -> Path:
+    if filename not in INVOICE_FIXTURES:
+        raise ValueError(f"Invoice fixture is not allowlisted: {filename}")
+    base = fixtures_dir().resolve()
+    path = (base / filename).resolve()
+    if not path.is_relative_to(base):
+        raise ValueError("Path traversal rejected for invoice fixture")
+    if not path.is_file():
+        raise ValueError(f"Synthetic invoice fixture not found: {filename}")
+    return path
+
+
 def load_invoice(filename: str) -> InvoiceRecord:
-    path = repo_root() / "examples" / "invoice-approval" / "invoices" / filename
+    path = resolve_fixture_path(filename)
     try:
         return InvoiceRecord.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -53,53 +65,45 @@ def load_purchase_orders() -> dict[str, PurchaseOrderRecord]:
         return {
             row["purchase_order"]: PurchaseOrderRecord(
                 purchase_order=row["purchase_order"],
-                total=float(row["total"]),
+                total=row["total"],
                 currency=row.get("currency", "USD"),
             )
             for row in csv.DictReader(file)
         }
 
 
+def default_config() -> InvoiceCompilerConfig:
+    return InvoiceCompilerConfig()
+
+
+def resolve_config(workflow: WorkflowIR | None = None) -> InvoiceCompilerConfig:
+    if workflow is None:
+        return default_config()
+    return extract_invoice_compiler_config(workflow)
+
+
 def process_invoice(
     invoice: InvoiceRecord,
     purchase_orders: dict[str, PurchaseOrderRecord],
+    config: InvoiceCompilerConfig | None = None,
 ) -> WorkflowResult:
-    if invoice.unreadable_invoice_number or not invoice.invoice_number:
-        return WorkflowResult(
-            status=WorkflowStatus.HUMAN_REVIEW,
-            reason="Invoice number is missing or unreadable.",
-        )
-    if not invoice.purchase_order:
-        return WorkflowResult(
-            status=WorkflowStatus.HUMAN_REVIEW,
-            reason="Purchase-order number is missing or unreadable.",
-        )
-    purchase_order = purchase_orders.get(invoice.purchase_order)
-    if purchase_order is None:
-        return WorkflowResult(
-            status=WorkflowStatus.HUMAN_REVIEW,
-            reason="Purchase order was not found.",
-        )
-    if invoice.currency != purchase_order.currency or invoice.total != purchase_order.total:
-        return WorkflowResult(
-            status=WorkflowStatus.EXCEPTION,
-            reason="Invoice and purchase-order amounts do not match.",
-            expected_total=purchase_order.total,
-            actual_total=invoice.total,
-        )
-    return WorkflowResult(
-        status=WorkflowStatus.APPROVAL_REQUIRED,
-        reason="Invoice and purchase order match; human approval is required.",
+    return interpret_invoice(invoice, purchase_orders, config or default_config())
+
+
+def process_fixture(
+    filename: str,
+    workflow: WorkflowIR | None = None,
+) -> WorkflowResult:
+    return process_invoice(
+        load_invoice(filename),
+        load_purchase_orders(),
+        resolve_config(workflow),
     )
 
 
-def process_fixture(filename: str) -> WorkflowResult:
-    return process_invoice(load_invoice(filename), load_purchase_orders())
-
-
-def approve_fixture(filename: str) -> str:
+def approve_fixture(filename: str, workflow: WorkflowIR | None = None) -> str:
     """Record an explicit approval for synthetic data without external side effects."""
-    result = process_fixture(filename)
+    result = process_fixture(filename, workflow)
     if result.status is not WorkflowStatus.APPROVAL_REQUIRED:
         raise ValueError("Only an exact-match synthetic invoice can be approved")
     return f"approval-{filename.removesuffix('.json')}"

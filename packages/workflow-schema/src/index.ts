@@ -12,6 +12,8 @@ export const stepTypeSchema = z.enum([
   "human_review",
 ]);
 
+export const workflowKindSchema = z.enum(["invoice_approval", "unsupported"]);
+
 export const workflowInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -46,6 +48,7 @@ export const workflowStepSchema = z.object({
   requires_approval: z.boolean(),
   confidence: z.number().min(0).max(1).default(0),
   evidence_ids: z.array(z.string()).default([]),
+  accidental: z.boolean().default(false),
 });
 
 export const workflowDecisionSchema = z.object({
@@ -84,6 +87,9 @@ export const workflowUncertaintySchema = z.object({
   reason: z.string().min(1),
   affected_step_ids: z.array(z.string()),
   required: z.boolean(),
+  answer_type: z.enum(["boolean", "single_select", "short_text"]).default("single_select"),
+  allowed_options: z.array(z.string()).default([]),
+  resolution_target: z.string().default(""),
 });
 
 export const workflowTestSchema = z.object({
@@ -101,6 +107,8 @@ export const workflowIRSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  workflow_kind: workflowKindSchema.default("unsupported"),
+  demonstration_id: z.string().nullable().optional(),
   inputs: z.array(workflowInputSchema),
   variables: z.array(workflowVariableSchema),
   steps: z.array(workflowStepSchema).min(1),
@@ -118,3 +126,4 @@ export type WorkflowStep = z.infer<typeof workflowStepSchema>;
 export type WorkflowTest = z.infer<typeof workflowTestSchema>;
 export type WorkflowEdge = z.infer<typeof workflowEdgeSchema>;
 export type WorkflowUncertainty = z.infer<typeof workflowUncertaintySchema>;
+export type WorkflowKind = z.infer<typeof workflowKindSchema>;

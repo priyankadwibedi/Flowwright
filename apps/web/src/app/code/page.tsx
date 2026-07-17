@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { AnnouncementBar } from "../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../components/marketing/MarketingHeader";
-import { API_URL } from "../../lib/config";
+import { API_CONFIGURED, API_URL, apiUnavailableMessage } from "../../lib/config";
 import { sampleWorkflow } from "../../lib/sampleWorkflow";
+import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 
 type GeneratedFile = { path: string; language: string; content: string };
 
@@ -12,17 +13,44 @@ export default function CodePage() {
   const [files, setFiles] = useState<GeneratedFile[]>([]);
   const [selected, setSelected] = useState<string>("workflow.py");
   const [error, setError] = useState<string | null>(null);
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
+
   useEffect(() => {
+    if (!API_CONFIGURED || !API_URL) {
+      setError(apiUnavailableMessage());
+      return;
+    }
+    let workflow: WorkflowIR = sampleWorkflow;
+    const stored = window.sessionStorage.getItem("flowwright.workflow");
+    if (stored) {
+      try {
+        workflow = workflowIRSchema.parse(JSON.parse(stored));
+      } catch {
+        workflow = sampleWorkflow;
+      }
+    }
+    if (workflow.workflow_kind !== "invoice_approval") {
+      setUnsupported(true);
+      setError(
+        "This workflow is unsupported for compilation. Only invoice_approval workflows can generate trusted artifacts.",
+      );
+      return;
+    }
     fetch(`${API_URL}/api/v1/workflows/generate`, {
-      body: JSON.stringify(sampleWorkflow),
+      body: JSON.stringify(workflow),
       headers: { "Content-Type": "application/json" },
       method: "POST",
     })
       .then(async (response) => {
         if (!response.ok)
           throw new Error(`Code generation failed (${response.status})`);
-        const payload = (await response.json()) as { files: GeneratedFile[] };
+        const payload = (await response.json()) as {
+          files: GeneratedFile[];
+          compiler_fingerprint?: string;
+        };
         setFiles(payload.files);
+        setFingerprint(payload.compiler_fingerprint ?? null);
       })
       .catch((reason: unknown) =>
         setError(
@@ -32,21 +60,31 @@ export default function CodePage() {
         ),
       );
   }, []);
+
   const current = files.find((file) => file.path === selected) ?? files[0];
+  const canDownload =
+    API_CONFIGURED &&
+    Boolean(API_URL) &&
+    !unsupported &&
+    files.length > 0;
+
   return (
     <main className="marketing-page">
       <AnnouncementBar />
       <MarketingHeader />
       <section className="code-page content-width">
         <div className="eyebrow">Generate / trusted artifact</div>
-        <h1>Inspect the generated workflow package.</h1>
+        <h1>Inspect the generated software.</h1>
         <p className="generated-lede">
-          Only the allow-listed invoice template can be generated in this
-          prototype. Model output is never executed as shell commands.
+          Source is compiled from InvoiceCompilerConfig derived from WorkflowIR.
+          Model output is never executed as shell commands.
         </p>
+        {fingerprint && (
+          <p className="mono-label">Compiler fingerprint: {fingerprint}</p>
+        )}
         {error && (
           <div className="notice notice-error" role="alert">
-            {error}. Start the FastAPI backend to generate the artifact.
+            {error}
           </div>
         )}
         {files.length > 0 && (
@@ -70,12 +108,18 @@ export default function CodePage() {
             </div>
           </div>
         )}
-        <a
-          className="button button-amber"
-          href={`${API_URL}/api/v1/workflows/invoice-approval-demo/artifact`}
-        >
-          Download artifact zip →
-        </a>
+        {canDownload ? (
+          <a
+            className="button button-amber"
+            href={`${API_URL}/api/v1/workflows/invoice-approval-demo/artifact`}
+          >
+            Download artifact zip →
+          </a>
+        ) : (
+          <button className="button button-amber" disabled>
+            Download unavailable
+          </button>
+        )}
       </section>
     </main>
   );

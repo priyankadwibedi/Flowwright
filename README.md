@@ -2,49 +2,52 @@
 
 **Show the work. Ship the workflow.**
 
-Flowwright is an AI workflow compiler that learns a browser-based process from a human demonstration and converts it into a structured, tested, executable application.
+Flowwright is an AI workflow compiler that learns a browser-based invoice process from a human demonstration and converts it into a structured, tested, executable application.
 
 ## Product overview
 
 People repeat browser tasks because the work contains context, decisions, and exceptions that generic recorders do not understand. Flowwright records a demonstration, extracts meaningful actions, identifies variables and safety boundaries, compiles a Workflow Intermediate Representation (WorkflowIR), and generates tests before a human approves high-impact actions.
 
-Existing workflow builders require users to understand automation logic. Autonomous agents improvise on every execution. Flowwright learns the process first, keeps uncertainty visible, and makes the compiled graph inspectable.
-
 ## How it works
 
-```mermaid
-flowchart LR
-  D[Demonstrate in browser] --> U[Understand actions and decisions]
-  U --> G[Generate WorkflowIR and code]
-  G --> T[Test expected and unexpected inputs]
-  T --> A{Human approval}
-  A --> P[Deploy reusable application]
+```text
+Demonstration → Evidence → WorkflowIR → InvoiceCompilerConfig
+  → Generated artifact → Tests against that artifact → Mini-app (same config)
 ```
 
-The core innovation is a compiler boundary: human evidence is normalized into a typed intermediate representation before code generation. The initial demo uses a deterministic analyzer; the OpenAI analyzer is isolated behind the same interface.
+Only `workflow_kind=invoice_approval` may proceed to generation, tests, and the invoice mini-application. Unsupported workflows can still be visualized.
 
 ## Prototype status
 
-Working today:
+### Working
 
 - Next.js dashboard with `/`, `/record`, `/workflows/demo`, `/tests`, `/code`, and `/generated/invoice-processor`.
-- Local screen recording with `getDisplayMedia`, preview, download, elapsed time, and optional event-log import.
-- FastAPI health, sample workflow, strict AI analysis, real test execution, evidence processing, trusted artifact, and invoice runtime endpoints.
-- Pydantic WorkflowIR, matching Zod schema, synthetic invoice fixtures, and generated graph using `@xyflow/react`.
-- Chrome Manifest V3 extension build that captures safe clicks, navigation, and non-sensitive input events, persists the local event log, and exports JSON.
-- GitHub Pages deployment of the Next.js frontend as a static export.
-- Demo mode works without an OpenAI key.
+- Screen capture plus separate microphone capture, merged into one recording, with screen-audio and microphone status.
+- Evidence processing: JPEG key frames, optional transcript (model-aware), browser events, IndexedDB evidence storage, provenance on workflow nodes.
+- FastAPI health, sample workflow, OpenAI analysis (when configured), clarifications, compiler config extraction, trusted artifact generation, isolated artifact pytest execution, and invoice mini-app endpoints.
+- Pydantic WorkflowIR + Zod schema, `Decimal` monetary comparisons, synthetic invoice fixtures.
+- Chrome MV3 extension with service-worker session ownership (`chrome.storage.session`), SPA navigation capture, sensitive-field omission, and optional host permissions.
+- GitHub Pages static export. Live API calls require `FLOWWRIGHT_API_URL` / `NEXT_PUBLIC_FLOWWRIGHT_API_URL`.
+- Demo mode works without an OpenAI key (sample invoice WorkflowIR only).
 
-Roadmap: production browser executor, richer event normalization, persistent storage, and deployment automation. OpenAI-backed compilation is implemented behind configuration but remains unverified here because no key is available.
+### Prototype limitations
 
-The prototype supports a controlled browser workflow only. It does not automate arbitrary desktop applications, autonomously execute sensitive actions, use real financial data, or provide authentication, billing, team collaboration, or enterprise controls.
+- Invoice-focused compiler only; other demonstrated workflows are `unsupported` for generation.
+- Approvals are synthetic in-memory records for the demo, not a durable database.
+- Media is uploaded only after consent on **Process evidence**; temporary processing files exist for the request lifetime. This is not a zero-retention guarantee.
+- No authentication, teams, billing, marketplaces, Gmail/Slack/payment integrations, or desktop automation.
+- OpenAI-backed end-to-end inference requires a configured key and is environment-dependent.
+
+### Future roadmap
+
+Production browser executor, persistent storage, richer event normalization, and deployment automation.
 
 ## Repository structure
 
 ```text
 apps/web          Next.js App Router frontend
 apps/api          FastAPI backend and tests
-apps/extension    Chrome Manifest V3 event-capture scaffold
+apps/extension    Chrome Manifest V3 event-capture extension
 packages/...      WorkflowIR Zod package and sample workflow
 examples/...      Synthetic invoice and purchase-order data
 docs              Supporting static product documentation
@@ -53,20 +56,16 @@ scripts           Schema export and setup verification
 
 ## Technology stack
 
-Node.js 24 LTS, pnpm, Next.js, React, TypeScript, Tailwind CSS, shadcn/ui-compatible components, `@xyflow/react`, Zod, Playwright, Python 3.12+, FastAPI, Pydantic, pydantic-settings, OpenAI Python SDK, OpenCV, FFmpeg-compatible video decoding, Playwright Python, pytest, HTTPX, and SQLite for local development.
+Node.js 24 LTS, pnpm, Next.js, React, TypeScript, Tailwind CSS, custom UI primitives, `@xyflow/react`, Zod, Playwright (Node e2e), Python 3.12+, FastAPI, Pydantic, pydantic-settings, OpenAI Python SDK, OpenCV, FFmpeg-compatible video decoding, pytest, HTTPX.
 
 ## Local setup
 
 Prerequisites: Node.js 24 LTS, pnpm 11+, Python 3.12+, uv, and (for video extraction) FFmpeg codecs available to OpenCV.
 
-On Windows, if `pnpm` is not recognized after installing Node.js, run `corepack enable` once and open a new terminal. The repository pins pnpm 11.7.0 through `packageManager`, so local and CI installs use the same version.
-
 ```bash
 pnpm install
 cd apps/api && uv sync
 ```
-
-Copy `.env.example` to a local `.env` only when needed. Never commit it.
 
 Frontend:
 
@@ -75,8 +74,6 @@ pnpm dev:web
 pnpm --filter @flowwright/web build
 pnpm --filter @flowwright/web start
 ```
-
-The `start` command serves the generated static export locally after `build`.
 
 Backend:
 
@@ -89,70 +86,55 @@ uv run pytest
 Chrome extension:
 
 ```bash
-pnpm dev:extension
+pnpm --filter @flowwright/extension build
+pnpm --filter @flowwright/extension validate
 ```
 
-Then load `apps/extension/build` as an unpacked extension in `chrome://extensions` with Developer mode enabled. The extension requires explicit start/stop actions and does not upload event logs.
+Load `apps/extension/build` as an unpacked extension. Closing the popup does not stop an active capture session.
 
 Complete checks:
 
 ```bash
 pnpm check
+cd apps/api && uv run pytest
+pnpm --filter @flowwright/web test:e2e
 ```
 
 ## Environment variables
 
-`FLOWWRIGHT_DEMO_MODE=true` is the default and requires no API key. To use the isolated OpenAI analyzer, set `OPENAI_API_KEY`, `OPENAI_MODEL`, and `FLOWWRIGHT_DEMO_MODE=false` in the backend environment. `CORS_ALLOWED_ORIGINS` must list explicit origins. `MAX_UPLOAD_SIZE_MB` controls ephemeral video uploads. See `.env.example` and `apps/api/.env.example`.
+`FLOWWRIGHT_DEMO_MODE=true` is the default and requires no API key. To use OpenAI analysis, set `OPENAI_API_KEY`, `OPENAI_MODEL`, and `FLOWWRIGHT_DEMO_MODE=false`. Default transcription model is `gpt-4o-mini-transcribe` (`json` response; Whisper uses `verbose_json` + segments). See `.env.example` and `apps/api/.env.example`.
 
-## API
+## API (selected)
 
-- `GET /` — deployed API landing response with links to health and OpenAPI docs.
-- `GET /health` — service status.
-- `GET /api/v1/workflows/demo` — validated synthetic invoice WorkflowIR.
-- `POST /api/v1/workflows/analyze` — compile processed evidence with the configured OpenAI analyzer. Demo mode deliberately returns an explicit unavailable response; use `/workflows/demo` for the checked-in sample.
-- `POST /api/v1/workflows/test` — execute the synthetic invoice cases through the restricted runtime and return a run record.
-- `POST /api/v1/workflows/resolve` — answer workflow uncertainties before generation.
-- `POST /api/v1/workflows/generate` and `GET /api/v1/workflows/{workflow_id}/artifact` — generate/download the trusted invoice artifact.
-- `POST /api/v1/invoices/process` — run one synthetic invoice in the generated mini-application runtime.
-- `POST /api/v1/invoices/approve` — record an explicit human approval for an exact-match synthetic invoice; no external action is executed.
-- `POST /api/v1/media/process-demonstration` — extract bounded JPEG frames, optional audio/transcript status, browser events, and a timestamped evidence timeline without persisting media.
-- `POST /api/v1/media/keyframes` — validate a video, extract metadata for a small set of key frames, and delete the temporary file.
-
-## WorkflowIR example
-
-```json
-{
-  "id": "invoice-approval-demo",
-  "version": "0.1.0",
-  "steps": [
-    { "id": "compare_totals", "type": "condition", "requires_approval": false }
-  ],
-  "confidence": 0.94
-}
-```
-
-The authoritative full schema is `apps/api/app/models/workflow.py`; its JSON Schema export is `packages/workflow-schema/workflow.schema.json`.
+- `GET /health`
+- `GET /api/v1/workflows/demo`
+- `POST /api/v1/workflows/analyze` — requires processed evidence; unavailable in demo mode
+- `POST /api/v1/workflows/test` — generates trusted artifact and runs its pytest suite in a temp directory
+- `POST /api/v1/workflows/resolve` — apply clarification answers to WorkflowIR / compiler config
+- `POST /api/v1/workflows/generate` — IR → `InvoiceCompilerConfig` → source
+- `POST /api/v1/invoices/process` — mini-app uses the same compiler config interpreter
+- `POST /api/v1/media/process-demonstration` — evidence extraction (upload after consent)
 
 ## Invoice demo
 
-The four synthetic cases are exact match → `approval_required`, amount mismatch → `exception`, missing purchase order → `human_review`, and unreadable invoice number → `human_review`. Approval remains a human gate even for an exact match.
+Allowlisted fixtures: exact match → `approval_required`, amount mismatch → `exception` (or review when configured), missing purchase order → `human_review`, unreadable invoice number → `human_review`, fifth live case (one-cent difference).
 
 ## Testing and security
 
-Run `cd apps/api && uv run pytest` for backend tests, `pnpm --filter @flowwright/web test:e2e` for the Playwright smoke test, and `pnpm check` for frontend/extension checks. Keys never enter frontend code. Recordings are local and not persisted by the prototype. Generated code must be reviewed and must not be used as arbitrary shell execution. See `SECURITY.md` for limitations.
+See `SECURITY.md`. Public API usage is rate-limited and size-bounded. Do not claim media always stays local after **Process evidence**.
 
-## Deployment guidance
+## Deployment
 
-GitHub Pages builds and deploys the Next.js frontend static export from `apps/web/out` with the `/Flowwright` project-site base path. To enable live backend actions on Pages, create an Actions repository variable named `FLOWWRIGHT_API_URL`; the Pages workflow injects it as `NEXT_PUBLIC_FLOWWRIGHT_API_URL`. Without that variable, the public site remains a static product/demo surface and clearly reports unavailable backend actions. The FastAPI service targets Railway, Render, or Fly.io. Future PostgreSQL storage can use Neon or Supabase; future media storage can use Cloudflare R2 or Amazon S3. Credentials and deployment actions are intentionally not included.
+GitHub Pages deploys `apps/web/out` with the `/Flowwright` base path. Set Actions variable `FLOWWRIGHT_API_URL` for live backend actions; otherwise backend-dependent pages disable AI analysis, tests, generation, downloads, and the invoice processor.
 
-## Roadmap and hackathon demo flow
+## Hackathon demo flow
 
-1. Start the API in demo mode and the frontend.
-2. Record a browser demonstration, stop it, describe the task, and choose **Analyze demonstration**. Key-frame extraction is explicit and temporary.
-3. Open the compiled workflow graph and inspect variables, decisions, and approval gates.
-4. Open test results for all four synthetic cases.
-5. Show the extension scaffold and static product site.
+1. Start the API and frontend.
+2. Record screen + microphone, consent, **Process evidence**, optionally analyze with AI.
+3. Inspect provenance, resolve clarifications, generate code.
+4. Run tests against the generated artifact.
+5. Process a synthetic invoice in the mini-app (same compiled rules).
 
 ## Contributing and license
 
-See `CONTRIBUTING.md` for setup and pull-request expectations. Flowwright is released under the Apache License, Version 2.0 in `LICENSE`.
+See `CONTRIBUTING.md`. Apache License, Version 2.0 in `LICENSE`.

@@ -28,48 +28,50 @@ export function MarketingHeader() {
   const [open, setOpen] = useState(false);
   return (
     <header className="marketing-header">
-      <Link className="brand" href="/" onClick={() => setOpen(false)}>
-        <FlowwrightMark />
-        <span>flowwright</span>
-      </Link>
-      <button
-        className="menu-toggle"
-        type="button"
-        aria-expanded={open}
-        aria-controls="primary-navigation"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="sr-only">Toggle navigation</span>
-        <span aria-hidden="true">{open ? "Close" : "Menu"}</span>
-      </button>
-      <nav
-        id="primary-navigation"
-        className={`primary-navigation${open ? " is-open" : ""}`}
-      >
-        <div className="nav-center">
-          {navItems.map(([label, href]) => (
-            <Link key={label} href={href} onClick={() => setOpen(false)}>
-              {label}
+      <div className="app-container marketing-header-inner">
+        <Link className="brand" href="/" onClick={() => setOpen(false)}>
+          <FlowwrightMark />
+          <span>flowwright</span>
+        </Link>
+        <button
+          className="menu-toggle"
+          type="button"
+          aria-expanded={open}
+          aria-controls="primary-navigation"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span className="sr-only">Toggle navigation</span>
+          <span aria-hidden="true">{open ? "Close" : "Menu"}</span>
+        </button>
+        <nav
+          id="primary-navigation"
+          className={`primary-navigation${open ? " is-open" : ""}`}
+        >
+          <div className="nav-center">
+            {navItems.map(([label, href]) => (
+              <Link key={label} href={href} onClick={() => setOpen(false)}>
+                {label}
+              </Link>
+            ))}
+          </div>
+          <div className="nav-actions">
+            <a
+              href="https://github.com/priyankadwibedi/Flowwright"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub
+            </a>
+            <Link
+              className="button button-amber button-small"
+              href="/record"
+              onClick={() => setOpen(false)}
+            >
+              Try Flowwright <span aria-hidden="true">↗</span>
             </Link>
-          ))}
-        </div>
-        <div className="nav-actions">
-          <a
-            href="https://github.com/priyankadwibedi/Flowwright"
-            target="_blank"
-            rel="noreferrer"
-          >
-            GitHub
-          </a>
-          <Link
-            className="button button-amber button-small"
-            href="/record"
-            onClick={() => setOpen(false)}
-          >
-            Try Flowwright <span aria-hidden="true">↗</span>
-          </Link>
-        </div>
-      </nav>
+          </div>
+        </nav>
+      </div>
     </header>
   );
 }

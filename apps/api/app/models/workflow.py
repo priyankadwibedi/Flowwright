@@ -1,9 +1,10 @@
 """Typed models for Flowwright's evidence, workflow, and execution contracts."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 StepType = Literal[
     "input",
@@ -19,6 +20,35 @@ StepType = Literal[
 TestStatus = Literal["pending", "passed", "failed", "human_review"]
 EvidenceSource = Literal["frame", "browser_event", "speech"]
 ValuePolicy = Literal["omitted", "masked", "captured"]
+WorkflowKind = Literal["invoice_approval", "unsupported"]
+AnswerType = Literal["boolean", "single_select", "short_text"]
+TranscriptionStatus = Literal[
+    "available",
+    "unavailable",
+    "not_requested",
+    "failed",
+    "rate_limited",
+    "timeout",
+    "invalid_response",
+    "missing_audio",
+    "missing_api_key",
+]
+InvoiceFixture = Literal[
+    "invoice-exact-match.json",
+    "invoice-amount-mismatch.json",
+    "invoice-missing-po.json",
+    "invoice-unreadable-number.json",
+    "invoice-fifth-live-case.json",
+]
+INVOICE_FIXTURES: frozenset[str] = frozenset(
+    {
+        "invoice-exact-match.json",
+        "invoice-amount-mismatch.json",
+        "invoice-missing-po.json",
+        "invoice-unreadable-number.json",
+        "invoice-fifth-live-case.json",
+    }
+)
 
 
 class KeyValueEntry(BaseModel):
@@ -82,20 +112,29 @@ class EvidenceItem(BaseModel):
     timestamp_seconds: float = Field(ge=0)
     source: EvidenceSource
     content: str = Field(min_length=1)
+    frame_id: str | None = None
     image_base64: str | None = None
     metadata: list[MetadataEntry] = Field(default_factory=list)
+    observation_kind: Literal["direct", "inferred"] = "direct"
+    confidence: float = Field(default=1.0, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _prefer_frame_reference(self) -> "EvidenceItem":
+        if self.source == "frame" and self.frame_id is None and self.id:
+            # Timeline entries for frames reference the frame by id; avoid dual storage.
+            object.__setattr__(self, "frame_id", self.id)
+        return self
 
 
 class ProcessedDemonstration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    demonstration_id: str = Field(default="", max_length=128)
     duration_seconds: float = Field(ge=0)
     frames: list[CapturedFrame] = Field(default_factory=list, max_length=8)
     transcript: str = ""
     transcript_segments: list[TranscriptSegment] = Field(default_factory=list)
-    transcription_status: Literal[
-        "available", "unavailable", "not_requested", "failed"
-    ] = "not_requested"
+    transcription_status: TranscriptionStatus = "not_requested"
     audio_status: Literal["available", "missing", "unavailable", "not_checked"] = "not_checked"
     browser_events: list[BrowserEvent] = Field(default_factory=list)
     evidence_timeline: list[EvidenceItem] = Field(default_factory=list)
@@ -141,6 +180,7 @@ class WorkflowStep(BaseModel):
     requires_approval: bool
     confidence: float = Field(default=0.0, ge=0, le=1)
     evidence_ids: list[str] = Field(default_factory=list)
+    accidental: bool = False
 
 
 class WorkflowDecision(BaseModel):
@@ -187,6 +227,9 @@ class WorkflowUncertainty(BaseModel):
     reason: str = Field(min_length=1)
     affected_step_ids: list[str]
     required: bool
+    answer_type: AnswerType = "single_select"
+    allowed_options: list[str] = Field(default_factory=list)
+    resolution_target: str = ""
 
 
 class WorkflowTest(BaseModel):
@@ -210,6 +253,8 @@ class WorkflowIR(BaseModel):
     name: str = Field(min_length=1)
     description: str
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+    workflow_kind: WorkflowKind = "unsupported"
+    demonstration_id: str | None = None
     inputs: list[WorkflowInput]
     variables: list[WorkflowVariable]
     steps: list[WorkflowStep] = Field(min_length=1)
@@ -283,6 +328,7 @@ class WorkflowDraft(BaseModel):
 
     name: str = Field(min_length=1)
     description: str
+    workflow_kind: WorkflowKind
     variables: list[WorkflowVariableDraft]
     steps: list[WorkflowStepDraft] = Field(min_length=1)
     decisions: list[WorkflowDecisionDraft]
@@ -318,6 +364,17 @@ class TestExecution(BaseModel):
     logs: list[str] = Field(default_factory=list)
 
 
+class ArtifactExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    exit_code: int
+    duration_ms: float = Field(ge=0)
+    stdout: str = ""
+    stderr: str = ""
+    timed_out: bool = False
+    artifact_paths: list[str] = Field(default_factory=list)
+
+
 class TestRunResponse(BaseModel):
     workflow_id: str
     started_at: datetime
@@ -327,6 +384,9 @@ class TestRunResponse(BaseModel):
     failed: int = Field(ge=0)
     human_review_count: int = Field(ge=0)
     unsafe_actions_executed: int = Field(default=0, ge=0)
+    artifact_execution: ArtifactExecutionResult | None = None
+    generator_version: str | None = None
+    compiler_fingerprint: str | None = None
 
 
 class ClarificationAnswer(BaseModel):
@@ -342,6 +402,9 @@ class ResolveRequest(BaseModel):
 class ResolveResponse(BaseModel):
     workflow: WorkflowIR
     remaining_uncertainties: list[WorkflowUncertainty]
+    remaining_required: list[WorkflowUncertainty] = Field(default_factory=list)
+    remaining_optional: list[WorkflowUncertainty] = Field(default_factory=list)
+    generation_ready: bool = False
 
 
 class GeneratedFile(BaseModel):
@@ -356,15 +419,26 @@ class ExecutableWorkflow(BaseModel):
     files: list[GeneratedFile]
     generated_at: datetime
     generator_version: str
+    compiler_fingerprint: str | None = None
+    workflow_kind: WorkflowKind = "invoice_approval"
 
 
 class InvoiceProcessRequest(BaseModel):
-    invoice_file: str = Field(min_length=1)
+    invoice_file: InvoiceFixture
+    workflow: WorkflowIR | None = None
+
+    @field_validator("invoice_file")
+    @classmethod
+    def _allowlisted(cls, value: str) -> str:
+        if value not in INVOICE_FIXTURES:
+            raise ValueError("Invoice fixture is not in the allowlist")
+        return value
 
 
 class InvoiceApprovalRequest(BaseModel):
-    invoice_file: str = Field(min_length=1)
+    invoice_file: InvoiceFixture
     confirm: bool
+    workflow: WorkflowIR | None = None
 
 
 class InvoiceApprovalResponse(BaseModel):
@@ -373,3 +447,23 @@ class InvoiceApprovalResponse(BaseModel):
     message: str
     approval_record_id: str
     protected_action_executed: bool = False
+
+
+class WorkflowCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_id: str = Field(min_length=1)
+    accidental: bool | None = None
+    rename: str | None = Field(default=None, max_length=200)
+    variable_id: str | None = None
+    mark_constant: bool | None = None
+    require_human_approval: bool | None = None
+
+
+class CorrectWorkflowRequest(BaseModel):
+    workflow: WorkflowIR
+    corrections: list[WorkflowCorrection] = Field(min_length=1)
+
+
+# Re-export Decimal for callers that type against monetary fields.
+Money = Decimal

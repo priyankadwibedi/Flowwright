@@ -1,5 +1,7 @@
 "use client";
 
+/* Microphone + screen recording with merged tracks and explicit status UI. */
+
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -9,16 +11,39 @@ import {
   processedDemonstrationSchema,
   type ProcessedDemonstration,
 } from "../../lib/validation";
+import { storeEvidenceCollection } from "../../lib/evidenceStore";
+import { AppContainer } from "../layout/AppContainer";
+import { DemoModeToggle } from "./DemoModeToggle";
 import { RecordingChecklist } from "./RecordingChecklist";
 import { RecordingControls } from "./RecordingControls";
 import { RecordingPreview } from "./RecordingPreview";
 
 type ActionStatus = "idle" | "processing" | "ready" | "error";
+type TrackStatus = "active" | "unavailable" | "denied" | "off";
+
+function pickMimeType(): string {
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ];
+  for (const type of candidates) {
+    if (
+      typeof MediaRecorder !== "undefined" &&
+      MediaRecorder.isTypeSupported(type)
+    ) {
+      return type;
+    }
+  }
+  return "";
+}
 
 export function RecordingStudio() {
   const router = useRouter();
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
+  const chunks = useRef<Blob[]>([]);
+  const mimeType = useRef<string>("");
   const [status, setStatus] = useState("Ready to record");
   const [seconds, setSeconds] = useState(0);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -26,6 +51,10 @@ export function RecordingStudio() {
   const [eventLog, setEventLog] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [spokenExplanation, setSpokenExplanation] = useState(true);
+  const [consentUpload, setConsentUpload] = useState(false);
+  const [screenAudioStatus, setScreenAudioStatus] =
+    useState<TrackStatus>("off");
+  const [microphoneStatus, setMicrophoneStatus] = useState<TrackStatus>("off");
   const [processed, setProcessed] = useState<ProcessedDemonstration | null>(
     null,
   );
@@ -34,9 +63,14 @@ export function RecordingStudio() {
   const [analysisStatus, setAnalysisStatus] = useState<ActionStatus>("idle");
   const [message, setMessage] = useState("");
 
+  function stopAllTracks() {
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = null;
+  }
+
   useEffect(
     () => () => {
-      stream.current?.getTracks().forEach((track) => track.stop());
+      stopAllTracks();
       if (videoUrl) URL.revokeObjectURL(videoUrl);
     },
     [videoUrl],
@@ -51,19 +85,79 @@ export function RecordingStudio() {
     try {
       const display = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: spokenExplanation,
+        audio: true,
       });
-      stream.current = display;
-      const chunks: Blob[] = [];
-      const mediaRecorder = new MediaRecorder(display);
+      const tracks: MediaStreamTrack[] = [...display.getVideoTracks()];
+      const displayAudio = display.getAudioTracks();
+      setScreenAudioStatus(displayAudio.length ? "active" : "unavailable");
+
+      let micStream: MediaStream | null = null;
+      if (spokenExplanation) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false,
+          });
+          setMicrophoneStatus("active");
+        } catch {
+          setMicrophoneStatus("denied");
+          micStream = null;
+        }
+      } else {
+        setMicrophoneStatus("off");
+      }
+
+      // Prefer microphone narration; keep display audio only when mic is unavailable.
+      if (micStream?.getAudioTracks().length) {
+        tracks.push(...micStream.getAudioTracks());
+      } else if (displayAudio.length) {
+        tracks.push(...displayAudio);
+      } else {
+        displayAudio.forEach((track) => track.stop());
+      }
+      if (micStream?.getAudioTracks().length) {
+        displayAudio.forEach((track) => track.stop());
+      }
+
+      const combined = new MediaStream(tracks);
+      stream.current = combined;
+      chunks.current = [];
+      const selectedType = pickMimeType();
+      mimeType.current = selectedType;
+      const mediaRecorder = selectedType
+        ? new MediaRecorder(combined, { mimeType: selectedType })
+        : new MediaRecorder(combined);
+      mimeType.current = mediaRecorder.mimeType || selectedType || "video/webm";
+
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size) chunks.push(event.data);
+        if (event.data.size) chunks.current.push(event.data);
       };
+      mediaRecorder.onerror = () => {
+        setStatus("Recorder error");
+        setMessage("MediaRecorder reported an error. Recording stopped.");
+        stop();
+      };
+      const videoTrack = combined.getVideoTracks()[0];
+      videoTrack?.addEventListener("ended", () => {
+        setMessage("Shared screen ended. Recording stopped.");
+        stop();
+      });
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: "video/webm" });
+        const type = mimeType.current || "video/webm";
+        const blob = new Blob(chunks.current, { type });
+        stopAllTracks();
+        if (!blob.size) {
+          setRecordingBlob(null);
+          setVideoUrl(null);
+          setStatus("Empty recording discarded");
+          setMessage(
+            "Recording produced no media. Start again and keep the shared screen open.",
+          );
+          return;
+        }
         setRecordingBlob(blob);
         setVideoUrl(URL.createObjectURL(blob));
-        display.getTracks().forEach((track) => track.stop());
+        setStatus("Recording ready");
       };
       recorder.current = mediaRecorder;
       setSeconds(0);
@@ -75,16 +169,35 @@ export function RecordingStudio() {
       mediaRecorder.start(250);
     } catch {
       setStatus("Screen sharing was cancelled or unavailable");
+      setScreenAudioStatus("off");
+      setMicrophoneStatus("off");
     }
   }
 
   function stop() {
-    recorder.current?.stop();
-    setStatus("Recording ready");
+    const active = recorder.current;
+    if (active && active.state !== "inactive") {
+      try {
+        if (active.state === "recording") {
+          active.requestData();
+        }
+      } catch {
+        // Some browsers reject requestData outside an active recording state.
+      }
+      active.stop();
+    } else {
+      stopAllTracks();
+      setStatus("Recording ready");
+    }
   }
 
   async function processEvidence() {
     if (!recordingBlob) return;
+    if (!consentUpload) {
+      setProcessingStatus("error");
+      setMessage("Confirm the privacy disclosure before uploading evidence.");
+      return;
+    }
     if (!API_CONFIGURED || !API_URL) {
       setProcessingStatus("error");
       setMessage(
@@ -98,7 +211,23 @@ export function RecordingStudio() {
     );
     try {
       const media = new FormData();
-      media.append("file", recordingBlob, "flowwright-recording.webm");
+      // Strip codec parameters so the upload Content-Type is a bare video/webm|mp4.
+      const baseType = (recordingBlob.type || "video/webm").split(";", 1)[0].trim();
+      const extension = baseType.includes("mp4")
+        ? "mp4"
+        : baseType.includes("quicktime")
+          ? "mov"
+          : "webm";
+      const uploadType =
+        baseType === "video/mp4" || baseType === "video/quicktime"
+          ? baseType
+          : "video/webm";
+      const uploadBlob = new Blob([recordingBlob], { type: uploadType });
+      media.append(
+        "file",
+        uploadBlob,
+        `flowwright-recording.${extension}`,
+      );
       if (eventLog) media.append("event_log", eventLog);
       media.append("task_description", taskDescription.trim());
       const response = await fetch(
@@ -114,6 +243,7 @@ export function RecordingStudio() {
         );
       }
       const payload = processedDemonstrationSchema.parse(await response.json());
+      await storeEvidenceCollection(payload);
       setProcessed(payload);
       setProcessingStatus("ready");
       setMessage(
@@ -164,6 +294,12 @@ export function RecordingStudio() {
       }
       const workflow = workflowIRSchema.parse(await response.json());
       sessionStorage.setItem("flowwright.workflow", JSON.stringify(workflow));
+      if (processed.demonstration_id) {
+        sessionStorage.setItem(
+          "flowwright.demonstration_id",
+          processed.demonstration_id,
+        );
+      }
       setAnalysisStatus("ready");
       setMessage(
         "Workflow inferred. Open it to inspect provenance, decisions, and approval gates.",
@@ -193,183 +329,244 @@ export function RecordingStudio() {
     setProcessingStatus("idle");
   }
 
+  const backendHost = API_URL ? new URL(API_URL).host : "not configured";
+
   return (
-    <main className="studio-page">
-      <div className="content-width studio-heading">
-        <div>
+    <div className="studio-page">
+      <AppContainer>
+        <header className="record-intro">
           <div className="eyebrow">Demonstrate / 01</div>
-          <h1>Record a browser workflow.</h1>
+          <h1>Record the task once.</h1>
           <p>
-            Capture the work once. Review evidence. Then explicitly request AI
-            inference.
+            Demonstrate the process naturally. Flowwright will extract the
+            actions, decisions, variables, and exceptions before compiling the
+            workflow.
           </p>
-        </div>
-        <div className="privacy-badge">
-          <span>privacy</span>
-          <div>
-            <strong>Privacy first</strong>
-            <small>
-              Never record passwords, private messages, or payment details.
-            </small>
-          </div>
-        </div>
-      </div>
-      <div className="content-width studio-layout">
-        <section className="studio-main">
-          <div className="studio-card recording-card">
-            <div className="studio-card-header">
+        </header>
+
+        <div className="record-layout">
+          <aside className="record-context">
+            <div className="privacy-badge">
+              <span>privacy</span>
               <div>
-                <span className="mono-label">Screen capture</span>
-                <h2>Show Flowwright how the task works.</h2>
+                <strong>Privacy first</strong>
+                <small>
+                  Never record passwords, private messages, or payment details.
+                </small>
               </div>
-              <span className="browser-status">
-                <i /> Browser workflow
-              </span>
             </div>
-            <RecordingPreview videoUrl={videoUrl} />
-            <RecordingControls
-              status={status}
-              seconds={seconds}
-              onStart={start}
-              onStop={stop}
-              onUpload={uploadExisting}
+            <RecordingChecklist
+              hasRecording={Boolean(videoUrl)}
+              hasDescription={Boolean(taskDescription.trim())}
+              hasEvents={Boolean(eventLog)}
             />
-            <input
-              id="existing-recording"
-              className="visually-hidden"
-              type="file"
-              accept="video/*"
-              onChange={onExistingRecording}
-            />
-            <div className="capture-metadata">
-              <span>
-                <i className="audio-indicator" /> Audio{" "}
-                {spokenExplanation ? "enabled" : "off"}
-              </span>
-              <span>
-                <i className="event-indicator" /> Browser events optional
-              </span>
-              <span>Media stays local</span>
+            <div className="studio-note">
+              <span className="mono-label">Optional extension</span>
+              <h3>Capture safer browser events.</h3>
+              <p>
+                The Chrome extension can add clicks, navigation, submits, and
+                non-sensitive text fields. It never records password-like
+                inputs.
+              </p>
+              <a
+                href="https://github.com/priyankadwibedi/Flowwright/tree/main/docs"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Read the capture guide →
+              </a>
             </div>
-          </div>
-          {videoUrl && (
-            <section className="studio-card compile-card">
+            <DemoModeToggle />
+            <div className="studio-note warning">
+              <span className="mono-label">Prototype boundary</span>
+              <p>
+                AI inference is unavailable without a configured backend and
+                OpenAI key. The sample invoice workflow remains available
+                separately.
+              </p>
+            </div>
+          </aside>
+
+          <section className="record-main">
+            <div className="studio-card recording-card">
               <div className="studio-card-header">
                 <div>
-                  <span className="mono-label">Evidence / inference</span>
-                  <h2>Describe what should repeat.</h2>
+                  <span className="mono-label">Screen capture</span>
+                  <h2>Show Flowwright how the task works.</h2>
                 </div>
-                <span className="compile-number">02</span>
+                <span className="browser-status">
+                  <i /> Browser workflow
+                </span>
               </div>
-              <label htmlFor="task-description">Workflow description</label>
-              <textarea
-                id="task-description"
-                value={taskDescription}
-                onChange={(event) => setTaskDescription(event.target.value)}
-                placeholder="Review an invoice, find its purchase order, and approve matching totals."
+              <RecordingPreview videoUrl={videoUrl} />
+              <RecordingControls
+                status={status}
+                seconds={seconds}
+                onStart={start}
+                onStop={stop}
+                onUpload={uploadExisting}
               />
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={spokenExplanation}
-                  onChange={(event) =>
-                    setSpokenExplanation(event.target.checked)
-                  }
-                />
-                <span className="toggle-ui" />
-                <span>Include spoken explanation if available</span>
-              </label>
-              <div className="event-upload">
-                <label htmlFor="event-log">Optional JSON event log</label>
-                <input
-                  id="event-log"
-                  type="file"
-                  accept="application/json"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) file.text().then(setEventLog);
-                  }}
-                />
-                {eventLog && (
-                  <small>
-                    {eventLog.length.toLocaleString()} characters loaded locally
-                  </small>
-                )}
+              <input
+                id="existing-recording"
+                className="visually-hidden"
+                type="file"
+                accept="video/*"
+                onChange={onExistingRecording}
+              />
+              <div className="capture-metadata">
+                <span>
+                  <i className="audio-indicator" /> Screen audio:{" "}
+                  {screenAudioStatus}
+                </span>
+                <span>
+                  <i className="event-indicator" /> Microphone:{" "}
+                  {microphoneStatus}
+                </span>
+                <span>Browser events optional</span>
               </div>
-              <div className="compile-actions">
-                <button
-                  className="button button-outline"
-                  onClick={processEvidence}
-                  disabled={processingStatus === "processing" || !recordingBlob}
-                >
-                  {processingStatus === "processing"
-                    ? "Processing evidence..."
-                    : "Process evidence"}
-                </button>
-                <button
-                  className="button button-amber"
-                  onClick={analyzeDemonstration}
-                  disabled={analysisStatus === "processing" || !processed}
-                >
-                  {analysisStatus === "processing"
-                    ? "Analyzing..."
-                    : "Analyze my demonstration with AI →"}
-                </button>
-                <Link className="button button-outline" href="/workflows/demo">
-                  Try sample invoice demo
-                </Link>
-                {analysisStatus === "ready" && (
+            </div>
+
+            {videoUrl && (
+              <section className="studio-card compile-card">
+                <div className="studio-card-header">
+                  <div>
+                    <span className="mono-label">Evidence / inference</span>
+                    <h2>Describe what should repeat.</h2>
+                  </div>
+                  <span className="compile-number">02</span>
+                </div>
+                <label htmlFor="task-description">Workflow description</label>
+                <textarea
+                  id="task-description"
+                  value={taskDescription}
+                  onChange={(event) => setTaskDescription(event.target.value)}
+                  placeholder="Review an invoice, find its purchase order, and approve matching totals."
+                />
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={spokenExplanation}
+                    onChange={(event) =>
+                      setSpokenExplanation(event.target.checked)
+                    }
+                  />
+                  <span className="toggle-ui" />
+                  <span>Request microphone narration when recording</span>
+                </label>
+                <div className="privacy-disclosure">
+                  <p>
+                    Your recording stays local until you choose Process
+                    evidence. Processing uploads it temporarily to the
+                    configured Flowwright backend. Selected frames and
+                    transcript text may be sent to the configured AI provider.
+                  </p>
+                  <ul>
+                    <li>Backend host: {backendHost}</li>
+                    <li>
+                      Transcription:{" "}
+                      {API_CONFIGURED
+                        ? "available when API key is set"
+                        : "disabled"}
+                    </li>
+                    <li>
+                      AI analysis:{" "}
+                      {API_CONFIGURED
+                        ? "available when configured"
+                        : "disabled"}
+                    </li>
+                    <li>Media retention: not retained by default</li>
+                  </ul>
+                  <label className="toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={consentUpload}
+                      onChange={(event) =>
+                        setConsentUpload(event.target.checked)
+                      }
+                    />
+                    <span className="toggle-ui" />
+                    <span>
+                      I understand this upload and consent to process evidence
+                    </span>
+                  </label>
+                  <a
+                    href="https://github.com/priyankadwibedi/Flowwright/blob/main/SECURITY.md"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Privacy and security documentation →
+                  </a>
+                </div>
+                <div className="event-upload">
+                  <label htmlFor="event-log">Optional JSON event log</label>
+                  <input
+                    id="event-log"
+                    type="file"
+                    accept="application/json"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) file.text().then(setEventLog);
+                    }}
+                  />
+                  {eventLog && (
+                    <small>
+                      {eventLog.length.toLocaleString()} characters loaded
+                      locally
+                    </small>
+                  )}
+                </div>
+                <div className="compile-actions">
+                  <button
+                    className="button button-amber"
+                    onClick={processEvidence}
+                    disabled={
+                      processingStatus === "processing" ||
+                      !recordingBlob ||
+                      !consentUpload
+                    }
+                  >
+                    {processingStatus === "processing"
+                      ? "Processing evidence..."
+                      : "Process evidence"}
+                  </button>
                   <button
                     className="button button-outline"
-                    onClick={() => router.push("/workflows/demo")}
+                    onClick={analyzeDemonstration}
+                    disabled={analysisStatus === "processing" || !processed}
                   >
-                    Open inferred workflow
+                    {analysisStatus === "processing"
+                      ? "Analyzing..."
+                      : "Analyze my demonstration with AI →"}
                   </button>
+                  <Link
+                    className="button button-outline"
+                    href="/workflows/demo"
+                  >
+                    Try sample invoice demo
+                  </Link>
+                  {analysisStatus === "ready" && (
+                    <button
+                      className="button button-outline"
+                      onClick={() => router.push("/workflows/demo")}
+                    >
+                      Open inferred workflow
+                    </button>
+                  )}
+                </div>
+                {message && (
+                  <p
+                    className={`analysis-message ${analysisStatus === "error" || processingStatus === "error" ? "error" : analysisStatus === "ready" ? "ready" : ""}`}
+                  >
+                    {message}
+                  </p>
                 )}
-              </div>
-              {message && (
-                <p
-                  className={`analysis-message ${analysisStatus === "error" || processingStatus === "error" ? "error" : analysisStatus === "ready" ? "ready" : ""}`}
-                >
-                  {message}
-                </p>
-              )}
-              {processed && <EvidenceReview processed={processed} />}
-            </section>
-          )}
-        </section>
-        <aside className="studio-sidebar">
-          <RecordingChecklist
-            hasRecording={Boolean(videoUrl)}
-            hasDescription={Boolean(taskDescription.trim())}
-            hasEvents={Boolean(eventLog)}
-          />
-          <div className="studio-note">
-            <span className="mono-label">Optional extension</span>
-            <h3>Capture safer browser events.</h3>
-            <p>
-              The Chrome extension can add clicks, navigation, submits, and
-              non-sensitive text fields. It never records password-like inputs.
-            </p>
-            <a
-              href="https://github.com/priyankadwibedi/Flowwright/tree/main/docs"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Read the capture guide →
-            </a>
-          </div>
-          <div className="studio-note warning">
-            <span className="mono-label">Prototype boundary</span>
-            <p>
-              AI inference is unavailable without a configured backend and
-              OpenAI key. The sample invoice workflow remains available
-              separately.
-            </p>
-          </div>
-        </aside>
-      </div>
-    </main>
+                {processed && <EvidenceReview processed={processed} />}
+              </section>
+            )}
+          </section>
+        </div>
+      </AppContainer>
+    </div>
   );
 }
 
@@ -431,4 +628,39 @@ function EvidenceReview({ processed }: { processed: ProcessedDemonstration }) {
       </div>
     </div>
   );
+}
+
+export async function mergeRecordingTracksForTest(options: {
+  spokenExplanation: boolean;
+  getDisplayMedia: typeof navigator.mediaDevices.getDisplayMedia;
+  getUserMedia: typeof navigator.mediaDevices.getUserMedia;
+}): Promise<{
+  trackKinds: string[];
+  screenAudioStatus: TrackStatus;
+  microphoneStatus: TrackStatus;
+}> {
+  const display = await options.getDisplayMedia({ video: true, audio: true });
+  const tracks: MediaStreamTrack[] = [...display.getVideoTracks()];
+  const displayAudio = display.getAudioTracks();
+  let screenAudioStatus: TrackStatus = displayAudio.length
+    ? "active"
+    : "unavailable";
+  let microphoneStatus: TrackStatus = "off";
+  if (options.spokenExplanation) {
+    try {
+      const mic = await options.getUserMedia({ audio: true, video: false });
+      microphoneStatus = "active";
+      tracks.push(...mic.getAudioTracks());
+    } catch {
+      microphoneStatus = "denied";
+      tracks.push(...displayAudio);
+    }
+  } else {
+    tracks.push(...displayAudio);
+  }
+  return {
+    trackKinds: tracks.map((track) => track.kind),
+    screenAudioStatus,
+    microphoneStatus,
+  };
 }
