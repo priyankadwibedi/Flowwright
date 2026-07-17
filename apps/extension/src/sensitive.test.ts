@@ -1,15 +1,29 @@
-import assert from "node:assert/strict";
 import { isSensitiveFieldLike } from "./sensitive.ts";
 
-assert.equal(isSensitiveFieldLike({ type: "password" }), true);
-assert.equal(isSensitiveFieldLike({ type: "hidden" }), true);
-assert.equal(isSensitiveFieldLike({ type: "file" }), true);
-assert.equal(isSensitiveFieldLike({ autocomplete: "one-time-code" }), true);
-assert.equal(isSensitiveFieldLike({ name: "api_key" }), true);
-assert.equal(isSensitiveFieldLike({ name: "ssn" }), true);
-assert.equal(
+function assertEqual(actual: boolean, expected: boolean, label: string): void {
+  if (actual !== expected) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
+}
+
+assertEqual(isSensitiveFieldLike({ type: "password" }), true, "password");
+assertEqual(isSensitiveFieldLike({ type: "hidden" }), true, "hidden");
+assertEqual(isSensitiveFieldLike({ type: "file" }), true, "file");
+assertEqual(
+  isSensitiveFieldLike({ autocomplete: "one-time-code" }),
+  true,
+  "otp autocomplete",
+);
+assertEqual(isSensitiveFieldLike({ name: "api_key" }), true, "api_key");
+assertEqual(isSensitiveFieldLike({ name: "ssn" }), true, "ssn");
+assertEqual(
   isSensitiveFieldLike({ dataFlowwrightSensitive: "true" }),
   true,
+  "dataFlowwrightSensitive",
 );
-assert.equal(isSensitiveFieldLike({ name: "invoice_number" }), false);
+assertEqual(
+  isSensitiveFieldLike({ name: "invoice_number" }),
+  false,
+  "invoice_number",
+);
 console.log("extension sensitive-field checks passed");
