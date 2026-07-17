@@ -19,7 +19,6 @@ export function FlowwrightMark() {
 const navItems = [
   ["Product", "/#product"],
   ["How it works", "/#process"],
-  ["Demo", "/#demo"],
   ["Architecture", "/workflows/demo"],
   ["About", "/#about"],
 ] as const;

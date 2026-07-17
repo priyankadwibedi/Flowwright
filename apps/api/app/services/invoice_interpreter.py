@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.services.invoice_compiler import InvoiceCompilerConfig
+from app.services.invoice_compiler import InvoiceCompilerConfig, config_fingerprint
 
 
 class WorkflowStatus(StrEnum):
@@ -68,10 +68,7 @@ def interpret_invoice(
     config: InvoiceCompilerConfig,
 ) -> WorkflowResult:
     """Apply InvoiceCompilerConfig rules to a synthetic invoice."""
-    fingerprint = (
-        f"tol={config.amount_tolerance}|currency={config.compare_currency}|"
-        f"mismatch={config.amount_mismatch_action}|delivery={config.exception_delivery}"
-    )
+    fingerprint = config_fingerprint(config)
 
     if invoice.unreadable_invoice_number or not invoice.invoice_number:
         return WorkflowResult(

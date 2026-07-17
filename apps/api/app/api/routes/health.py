@@ -1,13 +1,8 @@
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException
 
-from app.core.config import capability_status, get_settings, set_demo_mode
+from app.core.config import capability_status, get_settings
 
 router = APIRouter()
-
-
-class DemoModeRequest(BaseModel):
-    enabled: bool = Field(description="true keeps the sample-only path; false enables AI analysis")
 
 
 @router.get("/health")
@@ -27,11 +22,5 @@ def get_runtime_settings() -> dict[str, bool]:
 
 
 @router.post("/api/v1/settings/demo-mode")
-def update_demo_mode(request: DemoModeRequest) -> dict[str, bool]:
-    try:
-        return set_demo_mode(request.enabled)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+def update_demo_mode() -> None:
+    raise HTTPException(status_code=404, detail="Demo mode is deployment configuration")

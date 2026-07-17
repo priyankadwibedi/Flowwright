@@ -25,10 +25,16 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         self._daily: dict[str, tuple[str, int]] = {}
 
     def _client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip() or "unknown"
         return request.client.host if request.client else "unknown"
+
+    def _is_expensive_path(self, path: str) -> bool:
+        return path in {
+            "/api/v1/media/process",
+            "/api/v1/workflows/analyze",
+            "/api/v1/workflows/test",
+            "/api/v1/workflows/generate",
+            "/api/v1/workflows/artifact",
+        } or path.startswith("/api/v1/invoices/")
 
     def _rate_limited(self, ip: str) -> bool:
         now = time.time()
@@ -67,7 +73,7 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
                     headers={"X-Request-ID": request_id},
                 )
 
-        if request.url.path.startswith("/api/"):
+        if request.url.path.startswith("/api/") and self._is_expensive_path(request.url.path):
             if self._rate_limited(ip):
                 logger.warning(
                     "rate_limited request_id=%s ip=%s path=%s",

@@ -1,0 +1,9 @@
+{
+  "supplier": "Northstar Office Labs",
+  "invoice_number": "INV-DEMO-1006",
+  "purchase_order": "PO-1001",
+  "date": "2026-07-10",
+  "currency": "EUR",
+  "total": 1250.0,
+  "field_confidence": 0.98
+}

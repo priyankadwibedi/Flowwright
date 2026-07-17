@@ -137,17 +137,18 @@ export default function DemoWorkflowPage() {
 
   async function applyCorrection(action: string) {
     if (!workflow || !selectedStep || !API_CONFIGURED || !API_URL) return;
-    const corrections =
-      action === "accidental"
-        ? [{ step_id: selectedStep.id, accidental: true }]
-        : action === "approval"
-          ? [{ step_id: selectedStep.id, require_human_approval: true }]
-          : [
-              {
-                step_id: selectedStep.id,
-                rename: `${selectedStep.name} (edited)`,
-              },
-            ];
+    let corrections;
+    if (action === "accidental") {
+      corrections = [{ step_id: selectedStep.id, accidental: true }];
+    } else if (action === "approval") {
+      corrections = [{ step_id: selectedStep.id, require_human_approval: true }];
+    } else {
+      const nextName = window
+        .prompt("Rename step", selectedStep.name)
+        ?.trim();
+      if (!nextName || nextName === selectedStep.name) return;
+      corrections = [{ step_id: selectedStep.id, rename: nextName }];
+    }
     const response = await fetch(`${API_URL}/api/v1/workflows/correct`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -311,12 +312,12 @@ export default function DemoWorkflowPage() {
             )}
             <div className="workflow-actions">
               {API_CONFIGURED && API_URL && isInvoice && generationReady ? (
-                <a
+                <Link
                   className="button button-amber"
-                  href={`${API_URL}/api/v1/workflows/${workflow.id}/artifact`}
+                  href="/code"
                 >
-                  Download trusted artifact
-                </a>
+                  Inspect and download artifact
+                </Link>
               ) : (
                 <button className="button button-amber" disabled>
                   {isInvoice

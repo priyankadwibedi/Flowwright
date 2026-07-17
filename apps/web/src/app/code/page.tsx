@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 import { AnnouncementBar } from "../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../components/marketing/MarketingHeader";
 import { API_CONFIGURED, API_URL, apiUnavailableMessage } from "../../lib/config";
-import { sampleWorkflow } from "../../lib/sampleWorkflow";
-import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 
 type GeneratedFile = { path: string; language: string; content: string };
 
@@ -15,20 +14,26 @@ export default function CodePage() {
   const [error, setError] = useState<string | null>(null);
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
+  const [workflow, setWorkflow] = useState<WorkflowIR | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!API_CONFIGURED || !API_URL) {
       setError(apiUnavailableMessage());
       return;
     }
-    let workflow: WorkflowIR = sampleWorkflow;
+    let workflow: WorkflowIR;
     const stored = window.sessionStorage.getItem("flowwright.workflow");
-    if (stored) {
-      try {
-        workflow = workflowIRSchema.parse(JSON.parse(stored));
-      } catch {
-        workflow = sampleWorkflow;
-      }
+    if (!stored) {
+      setError("No workflow is loaded. Open a workflow before generating code.");
+      return;
+    }
+    try {
+      workflow = workflowIRSchema.parse(JSON.parse(stored));
+      setWorkflow(workflow);
+    } catch {
+      setError("Saved workflow state is corrupted. Re-open the workflow before generating code.");
+      return;
     }
     if (workflow.workflow_kind !== "invoice_approval") {
       setUnsupported(true);
@@ -60,6 +65,38 @@ export default function CodePage() {
         ),
       );
   }, []);
+
+  async function downloadArtifact() {
+    if (!workflow || !API_URL) return;
+    setDownloading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/workflows/artifact`, {
+        body: JSON.stringify(workflow),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new Error(payload.detail ?? `Artifact download failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `flowwright-${workflow.id}-workflow.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Artifact download failed");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   const current = files.find((file) => file.path === selected) ?? files[0];
   const canDownload =
@@ -109,12 +146,13 @@ export default function CodePage() {
           </div>
         )}
         {canDownload ? (
-          <a
+          <button
             className="button button-amber"
-            href={`${API_URL}/api/v1/workflows/invoice-approval-demo/artifact`}
+            onClick={() => void downloadArtifact()}
+            disabled={downloading}
           >
-            Download artifact zip →
-          </a>
+            {downloading ? "Preparing zip…" : "Download artifact zip →"}
+          </button>
         ) : (
           <button className="button button-amber" disabled>
             Download unavailable

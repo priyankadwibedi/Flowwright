@@ -455,10 +455,11 @@ export function RecordingStudio() {
                 </label>
                 <div className="privacy-disclosure">
                   <p>
-                    Your recording stays local until you choose Process
-                    evidence. Processing uploads it temporarily to the
-                    configured Flowwright backend. Selected frames and
-                    transcript text may be sent to the configured AI provider.
+                    Your recording stays local until you select Process
+                    evidence. Processing temporarily uploads it to the
+                    configured backend. Selected frames and transcript text may
+                    later be sent to the configured AI provider when you request
+                    AI inference.
                   </p>
                   <ul>
                     <li>Backend host: {backendHost}</li>

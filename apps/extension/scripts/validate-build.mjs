@@ -7,15 +7,15 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const build = resolve(root, "build");
 const manifest = JSON.parse(await readFile(resolve(build, "manifest.json"), "utf8"));
 if (manifest.manifest_version !== 3) throw new Error("Extension manifest must use Manifest V3");
-for (const file of [
+const requiredFiles = [
   "manifest.json",
   "popup.html",
   "popup.css",
   "background.js",
   "content.js",
   "popup.js",
-  "sensitive.js",
-]) {
+];
+for (const file of requiredFiles) {
   await access(resolve(build, file));
 }
 if (manifest.background.service_worker !== "background.js") {
@@ -32,6 +32,19 @@ if (JSON.stringify(manifest).includes("<all_urls>")) {
 }
 if (!manifest.optional_host_permissions) {
   throw new Error("optional_host_permissions required for explicit host grants");
+}
+if (manifest.action?.default_popup) {
+  await access(resolve(build, manifest.action.default_popup));
+}
+
+const content = await readFile(resolve(build, "content.js"), "utf8");
+const unresolvedImportPattern =
+  /(?:^|\n)\s*import\s+(?:[^("'"`]+?\s+from\s+)?["'`]|(?:^|\n)\s*export\s+.+?\s+from\s+["'`]/;
+if (unresolvedImportPattern.test(content)) {
+  throw new Error("content.js must be self-contained and contain no runtime imports");
+}
+if (content.includes("./sensitive") || content.includes("from \"")) {
+  throw new Error("content.js contains an unresolved module reference");
 }
 
 await new Promise((resolvePromise, reject) => {

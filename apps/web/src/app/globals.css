@@ -300,42 +300,65 @@ summary:focus-visible {
   font-size: 0.68rem;
 }
 .tile-recording {
+  animation: mosaicFloatA 4.8s ease-in-out infinite alternate;
   grid-column: 1 / span 3;
-  transform: rotate(-0.5deg);
+  --tile-rotation: -0.5deg;
+  will-change: transform;
 }
 .tile-intent {
+  animation: mosaicFloatB 5.4s ease-in-out infinite alternate;
+  animation-delay: -1.4s;
   grid-column: 4 / span 3;
   margin-top: 54px;
-  transform: rotate(0.5deg);
+  --tile-rotation: 0.5deg;
+  will-change: transform;
 }
 .tile-variables {
+  animation: mosaicFloatC 5s ease-in-out infinite alternate;
+  animation-delay: -2.8s;
   grid-column: 7 / span 3;
-  transform: rotate(-0.4deg);
+  --tile-rotation: -0.4deg;
+  will-change: transform;
 }
 .tile-graph {
+  animation: mosaicFloatD 5.8s ease-in-out infinite alternate;
+  animation-delay: -0.7s;
   grid-column: 10 / span 3;
   margin-top: 36px;
-  transform: rotate(0.4deg);
+  --tile-rotation: 0.4deg;
+  will-change: transform;
 }
 .tile-code {
+  animation: mosaicFloatB 5.2s ease-in-out infinite alternate;
+  animation-delay: -3.6s;
   grid-column: 2 / span 3;
   margin-top: 18px;
-  transform: rotate(0.5deg);
+  --tile-rotation: 0.5deg;
+  will-change: transform;
 }
 .tile-tests {
+  animation: mosaicFloatA 5.6s ease-in-out infinite alternate;
+  animation-delay: -4.2s;
   grid-column: 5 / span 3;
   margin-top: 70px;
-  transform: rotate(-0.5deg);
+  --tile-rotation: -0.5deg;
+  will-change: transform;
 }
 .tile-approval {
+  animation: mosaicFloatC 4.9s ease-in-out infinite alternate;
+  animation-delay: -1.9s;
   grid-column: 8 / span 3;
   margin-top: 18px;
-  transform: rotate(0.4deg);
+  --tile-rotation: 0.4deg;
+  will-change: transform;
 }
 .tile-deploy {
+  animation: mosaicFloatD 5.3s ease-in-out infinite alternate;
+  animation-delay: -5.1s;
   grid-column: 11 / span 2;
   margin-top: 70px;
-  transform: rotate(-0.5deg);
+  --tile-rotation: -0.5deg;
+  will-change: transform;
 }
 .mini-toolbar,
 .intent-row,
@@ -1963,6 +1986,50 @@ summary:focus-visible {
   font-family: var(--mono);
   font-size: 0.75rem;
   padding: 38px 0;
+}
+@keyframes mosaicFloatA {
+  0% {
+    transform: translate3d(-12px, 8px, 0) rotate(var(--tile-rotation));
+  }
+  50% {
+    transform: translate3d(10px, -16px, 0) rotate(var(--tile-rotation));
+  }
+  100% {
+    transform: translate3d(18px, -6px, 0) rotate(var(--tile-rotation));
+  }
+}
+@keyframes mosaicFloatB {
+  0% {
+    transform: translate3d(14px, 10px, 0) rotate(var(--tile-rotation));
+  }
+  50% {
+    transform: translate3d(-14px, -14px, 0) rotate(var(--tile-rotation));
+  }
+  100% {
+    transform: translate3d(-20px, 8px, 0) rotate(var(--tile-rotation));
+  }
+}
+@keyframes mosaicFloatC {
+  0% {
+    transform: translate3d(-10px, -12px, 0) rotate(var(--tile-rotation));
+  }
+  50% {
+    transform: translate3d(12px, 18px, 0) rotate(var(--tile-rotation));
+  }
+  100% {
+    transform: translate3d(20px, 6px, 0) rotate(var(--tile-rotation));
+  }
+}
+@keyframes mosaicFloatD {
+  0% {
+    transform: translate3d(12px, -10px, 0) rotate(var(--tile-rotation));
+  }
+  50% {
+    transform: translate3d(-12px, 16px, 0) rotate(var(--tile-rotation));
+  }
+  100% {
+    transform: translate3d(-18px, -8px, 0) rotate(var(--tile-rotation));
+  }
 }
 @keyframes recordPulse {
   0%,

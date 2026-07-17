@@ -5,6 +5,7 @@
 import io
 import zipfile
 from datetime import UTC, datetime
+from decimal import Decimal
 from textwrap import dedent
 
 from app.models.workflow import ExecutableWorkflow, GeneratedFile, WorkflowIR
@@ -99,6 +100,18 @@ def _test_source(config: InvoiceCompilerConfig) -> str:
         mismatch_expected = "HUMAN_REVIEW"
     if config.amount_mismatch_action == "human_review" and mismatch_expected == "EXCEPTION":
         mismatch_expected = "HUMAN_REVIEW"
+    currency_expected = (
+        "APPROVAL_REQUIRED"
+        if not config.compare_currency
+        else config.amount_mismatch_action.upper()
+    )
+    if config.compare_currency and config.exception_delivery == "human_review":
+        currency_expected = "HUMAN_REVIEW"
+    boundary_expected = (
+        "APPROVAL_REQUIRED" if tolerance >= Decimal("0.01") else "EXCEPTION"
+    )
+    if config.exception_delivery == "human_review" and boundary_expected == "EXCEPTION":
+        boundary_expected = "HUMAN_REVIEW"
     fingerprint = config_fingerprint(config)
     return dedent(
         f'''\
@@ -135,7 +148,7 @@ def _test_source(config: InvoiceCompilerConfig) -> str:
                 {{"invoice_number": "INV-1004", "purchase_order": "PO-1001", "total": Decimal("1250.00"), "currency": "EUR"}},
                 {{"PO-1001": {{"total": Decimal("1250.00"), "currency": "USD"}}}},
             )
-            assert result.status in {{WorkflowStatus.EXCEPTION, WorkflowStatus.HUMAN_REVIEW}}
+            assert result.status == WorkflowStatus.{currency_expected}
 
         def test_decimal_precision():
             result = process_invoice(
@@ -143,6 +156,13 @@ def _test_source(config: InvoiceCompilerConfig) -> str:
                 {{"PO-1005": {{"total": Decimal("0.3"), "currency": "USD"}}}},
             )
             assert result.status == WorkflowStatus.APPROVAL_REQUIRED
+
+        def test_decimal_tolerance_boundary():
+            result = process_invoice(
+                {{"invoice_number": "INV-1006", "purchase_order": "PO-1006", "total": Decimal("1250.01"), "currency": "USD"}},
+                {{"PO-1006": {{"total": Decimal("1250.00"), "currency": "USD"}}}},
+            )
+            assert result.status == WorkflowStatus.{boundary_expected}
         '''
     )
 
@@ -194,5 +214,8 @@ def artifact_zip(artifact: ExecutableWorkflow) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for file in artifact.files:
-            archive.writestr(file.path, file.content)
+            info = zipfile.ZipInfo(file.path)
+            info.date_time = (2024, 1, 1, 0, 0, 0)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, file.content)
     return buffer.getvalue()

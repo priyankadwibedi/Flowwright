@@ -38,6 +38,7 @@ InvoiceFixture = Literal[
     "invoice-amount-mismatch.json",
     "invoice-missing-po.json",
     "invoice-unreadable-number.json",
+    "invoice-currency-mismatch.json",
     "invoice-fifth-live-case.json",
 ]
 INVOICE_FIXTURES: frozenset[str] = frozenset(
@@ -46,6 +47,7 @@ INVOICE_FIXTURES: frozenset[str] = frozenset(
         "invoice-amount-mismatch.json",
         "invoice-missing-po.json",
         "invoice-unreadable-number.json",
+        "invoice-currency-mismatch.json",
         "invoice-fifth-live-case.json",
     }
 )
@@ -277,6 +279,8 @@ class WorkflowVariableDraft(BaseModel):
         "string", "number", "decimal", "boolean", "date", "file", "record"
     ]
     source: str = Field(min_length=1)
+    sensitive: bool = False
+    constant: bool = False
     confidence: float = Field(ge=0, le=1)
     evidence_ids: list[str]
 
@@ -296,6 +300,8 @@ class WorkflowStepDraft(BaseModel):
     requires_approval: bool
     confidence: float = Field(ge=0, le=1)
     evidence_ids: list[str]
+    observation_kind: Literal["observed", "inferred"] = "observed"
+    accidental: bool = False
 
 
 class WorkflowDecisionDraft(BaseModel):
@@ -380,6 +386,8 @@ class TestRunResponse(BaseModel):
     started_at: datetime
     completed_at: datetime
     executions: list[TestExecution]
+    mandatory_test_count: int = Field(default=0, ge=0)
+    optional_test_count: int = Field(default=0, ge=0)
     passed: int = Field(ge=0)
     failed: int = Field(ge=0)
     human_review_count: int = Field(ge=0)
@@ -438,7 +446,11 @@ class InvoiceProcessRequest(BaseModel):
 class InvoiceApprovalRequest(BaseModel):
     invoice_file: InvoiceFixture
     confirm: bool
-    workflow: WorkflowIR | None = None
+    workflow: WorkflowIR
+    compiled_workflow_id: str = Field(min_length=1)
+    compiler_hash: str = Field(min_length=1)
+    decision: Literal["approved"]
+    timestamp: datetime
 
 
 class InvoiceApprovalResponse(BaseModel):
@@ -446,6 +458,10 @@ class InvoiceApprovalResponse(BaseModel):
     status: Literal["approved"]
     message: str
     approval_record_id: str
+    compiled_workflow_id: str
+    compiler_hash: str
+    decision: Literal["approved"]
+    timestamp: datetime
     protected_action_executed: bool = False
 
 

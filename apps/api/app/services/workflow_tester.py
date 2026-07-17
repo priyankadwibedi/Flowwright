@@ -1,11 +1,11 @@
 """Execute trusted generated invoice artifacts in an isolated temporary directory."""
 
-import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
 
@@ -19,7 +19,7 @@ from app.services.code_generator import GENERATOR_VERSION, generate_invoice_arti
 from app.services.invoice_compiler import config_fingerprint, extract_invoice_compiler_config
 from app.services.invoice_runtime import process_fixture
 
-MAX_ARTIFACT_TESTS = 8
+MAX_OPTIONAL_TESTS = 8
 ARTIFACT_TIMEOUT_SECONDS = 30
 
 
@@ -30,6 +30,8 @@ def _server_owned_cases(workflow: WorkflowIR) -> list[tuple[str, str, str]]:
         ("amount_mismatch", "invoice-amount-mismatch.json", "exception"),
         ("missing_purchase_order", "invoice-missing-po.json", "human_review"),
         ("unreadable_invoice_number", "invoice-unreadable-number.json", "human_review"),
+        ("currency_mismatch", "invoice-currency-mismatch.json", "exception"),
+        ("decimal_tolerance_boundary", "invoice-fifth-live-case.json", "exception"),
     ]
     config = extract_invoice_compiler_config(workflow)
     if config.amount_mismatch_action == "human_review" or (
@@ -38,19 +40,34 @@ def _server_owned_cases(workflow: WorkflowIR) -> list[tuple[str, str, str]]:
         cases[1] = ("amount_mismatch", "invoice-amount-mismatch.json", "human_review")
     if config.amount_tolerance >= 80:
         cases[1] = ("amount_mismatch", "invoice-amount-mismatch.json", "approval_required")
-    # Prefer workflow.tests when they only reference allowlisted fixtures, capped.
+    if not config.compare_currency:
+        cases[4] = ("currency_mismatch", "invoice-currency-mismatch.json", "approval_required")
+    if config.amount_tolerance >= Decimal("0.01"):
+        cases[5] = (
+            "decimal_tolerance_boundary",
+            "invoice-fifth-live-case.json",
+            "approval_required",
+        )
+    return cases
+
+
+def _optional_cases(workflow: WorkflowIR) -> list[tuple[str, str, str]]:
     selected: list[tuple[str, str, str]] = []
-    for test in workflow.tests[:MAX_ARTIFACT_TESTS]:
+    mandatory_ids = {test_id for test_id, _, _ in _server_owned_cases(workflow)}
+    for test in workflow.tests[:MAX_OPTIONAL_TESTS]:
+        if test.id in mandatory_ids:
+            continue
         filename = str(test.input_case.get("invoice_file", ""))
         if filename.endswith(".json") and filename in {
             "invoice-exact-match.json",
             "invoice-amount-mismatch.json",
             "invoice-missing-po.json",
             "invoice-unreadable-number.json",
+            "invoice-currency-mismatch.json",
             "invoice-fifth-live-case.json",
         }:
             selected.append((test.id, filename, test.expected_outcome))
-    return selected or cases
+    return selected
 
 
 def _write_artifact(directory: Path, workflow: WorkflowIR) -> list[str]:
@@ -66,8 +83,8 @@ def _write_artifact(directory: Path, workflow: WorkflowIR) -> list[str]:
 def _run_generated_pytest(directory: Path) -> ArtifactExecutionResult:
     started = perf_counter()
     env = {
-        **os.environ,
         "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "PYTHONPATH": str(directory),
     }
     # No shell interpolation; fixed interpreter; temporary cwd; no network needed.
@@ -132,8 +149,11 @@ def run_invoice_tests(workflow: WorkflowIR) -> TestRunResponse:
             update={"artifact_paths": artifact_paths}
         )
 
-        # Mirror each server-owned fixture through the shared interpreter for UI rows.
-        for test_id, filename, expected in _server_owned_cases(workflow):
+        mandatory_cases = _server_owned_cases(workflow)
+        optional_cases = _optional_cases(workflow)
+
+        # Mirror mandatory and optional fixtures through the shared interpreter for UI rows.
+        for test_id, filename, expected in [*mandatory_cases, *optional_cases]:
             started = perf_counter()
             result = process_fixture(filename, workflow)
             duration_ms = (perf_counter() - started) * 1000
@@ -192,6 +212,8 @@ def run_invoice_tests(workflow: WorkflowIR) -> TestRunResponse:
         started_at=started_at,
         completed_at=completed_at,
         executions=executions,
+        mandatory_test_count=len(mandatory_cases),
+        optional_test_count=len(optional_cases),
         passed=sum(execution.status == "passed" for execution in executions),
         failed=sum(execution.status == "failed" for execution in executions),
         human_review_count=sum(
@@ -238,6 +260,8 @@ def run_broken_artifact_regression(workflow: WorkflowIR) -> TestRunResponse:
         started_at=started_at,
         completed_at=completed_at,
         executions=executions,
+        mandatory_test_count=0,
+        optional_test_count=0,
         passed=sum(item.status == "passed" for item in executions),
         failed=sum(item.status == "failed" for item in executions),
         human_review_count=0,

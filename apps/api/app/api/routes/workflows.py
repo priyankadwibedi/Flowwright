@@ -1,4 +1,7 @@
+from datetime import UTC
+
 from fastapi import APIRouter, HTTPException, Response, status
+from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError, RateLimitError
 
 from app.core.config import get_settings
 from app.models.test_result import TestRunResponse
@@ -65,6 +68,21 @@ def analyze_workflow(request: AnalyzeRequest) -> WorkflowIR:
         )
         validate_workflow_ir(workflow)
         return workflow
+    except RateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="AI provider rate limit exceeded",
+        ) from exc
+    except APITimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="AI provider request timed out",
+        ) from exc
+    except (APIConnectionError, APIError, APIStatusError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI provider request failed",
+        ) from exc
     except (RuntimeError, ValueError, WorkflowValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -102,7 +120,39 @@ def correct_workflow(request: CorrectWorkflowRequest) -> WorkflowIR:
     steps = list(workflow.steps)
     variables = list(workflow.variables)
     approvals = list(workflow.approvals)
+    step_ids = {step.id for step in steps}
+    variable_ids = {variable.id for variable in variables}
     for correction in request.corrections:
+        if correction.step_id not in step_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown correction step_id: {correction.step_id}",
+            )
+        if (
+            correction.accidental is None
+            and correction.rename is None
+            and correction.mark_constant is None
+            and not correction.require_human_approval
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Correction must include a supported change",
+            )
+        if correction.rename is not None and not correction.rename.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Correction rename cannot be blank",
+            )
+        if correction.variable_id is not None and correction.variable_id not in variable_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown correction variable_id: {correction.variable_id}",
+            )
+        if correction.mark_constant is not None and correction.variable_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="mark_constant requires variable_id",
+            )
         steps = [
             (
                 step.model_copy(
@@ -112,7 +162,7 @@ def correct_workflow(request: CorrectWorkflowRequest) -> WorkflowIR:
                             if correction.accidental is not None
                             else {}
                         ),
-                        **({"name": correction.rename} if correction.rename else {}),
+                        **({"name": correction.rename.strip()} if correction.rename else {}),
                         **(
                             {"requires_approval": True}
                             if correction.require_human_approval
@@ -174,6 +224,25 @@ def generate_workflow(workflow: WorkflowIR) -> ExecutableWorkflow:
         ) from exc
 
 
+@router.post("/artifact")
+def create_workflow_artifact(workflow: WorkflowIR) -> Response:
+    _ensure_invoice_kind(workflow)
+    try:
+        validate_workflow_ir(workflow)
+        artifact = generate_invoice_artifact(workflow)
+    except (ValueError, CompilerRejectedError, WorkflowValidationError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    filename = f"flowwright-{workflow.id}-workflow.zip"
+    return Response(
+        content=artifact_zip(artifact),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{workflow_id}/artifact")
 def download_workflow_artifact(workflow_id: str) -> Response:
     demo = DemoWorkflowAnalyzer().analyze("invoice approval")
@@ -215,8 +284,12 @@ def approve_invoice(request: InvoiceApprovalRequest) -> InvoiceApprovalResponse:
             detail="Explicit confirmation is required before recording approval",
         )
     try:
-        if request.workflow is not None:
-            _ensure_invoice_kind(request.workflow)
+        _ensure_invoice_kind(request.workflow)
+        artifact = generate_invoice_artifact(request.workflow)
+        if request.compiled_workflow_id != artifact.workflow_id:
+            raise ValueError("Approval workflow identity does not match compiled workflow")
+        if request.compiler_hash != (artifact.compiler_fingerprint or ""):
+            raise ValueError("Approval compiler hash does not match compiled workflow")
         record_id = approve_fixture(request.invoice_file, request.workflow)
     except (ValueError, CompilerRejectedError) as exc:
         raise HTTPException(
@@ -226,6 +299,15 @@ def approve_invoice(request: InvoiceApprovalRequest) -> InvoiceApprovalResponse:
     return InvoiceApprovalResponse(
         invoice_file=request.invoice_file,
         status="approved",
-        message="Synthetic approval recorded. No external action was executed.",
+        message=(
+            "Synthetic approval receipt created. "
+            "No persistent approval store or external action was used."
+        ),
         approval_record_id=record_id,
+        compiled_workflow_id=request.compiled_workflow_id,
+        compiler_hash=request.compiler_hash,
+        decision=request.decision,
+        timestamp=request.timestamp.astimezone(UTC)
+        if request.timestamp.tzinfo
+        else request.timestamp.replace(tzinfo=UTC),
     )

@@ -6,7 +6,7 @@ const safetyItems = [
   ],
   [
     "Evidence upload consent",
-    "Your recording stays local until you choose Process evidence. Processing uploads it temporarily to the configured backend; selected frames and transcript text may be sent to the configured AI provider.",
+    "Your recording stays local until you select Process evidence. Processing temporarily uploads it to the configured backend. Selected frames and transcript text may later be sent to the configured AI provider when you request AI inference.",
   ],
   [
     "Test before use",

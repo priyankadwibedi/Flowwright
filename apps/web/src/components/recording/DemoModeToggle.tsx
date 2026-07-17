@@ -8,9 +8,7 @@ type CapabilityStatus = {
   openai_configured: boolean;
   transcription_enabled: boolean;
   ai_analysis_enabled: boolean;
-  can_disable_demo_mode: boolean;
   openai_model_configured: boolean;
-  persisted_to_env?: boolean;
 };
 
 const emptyStatus: CapabilityStatus = {
@@ -18,13 +16,11 @@ const emptyStatus: CapabilityStatus = {
   openai_configured: false,
   transcription_enabled: false,
   ai_analysis_enabled: false,
-  can_disable_demo_mode: false,
   openai_model_configured: false,
 };
 
 export function DemoModeToggle() {
   const [status, setStatus] = useState<CapabilityStatus>(emptyStatus);
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,40 +43,6 @@ export function DemoModeToggle() {
     };
   }, []);
 
-  async function toggle(nextEnabled: boolean) {
-    if (!API_URL) return;
-    setLoading(true);
-    setMessage(null);
-    try {
-      const response = await fetch(`${API_URL}/api/v1/settings/demo-mode`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: nextEnabled }),
-      });
-      const payload = (await response.json()) as CapabilityStatus & {
-        detail?: string;
-      };
-      if (!response.ok) {
-        setMessage(
-          typeof payload.detail === "string"
-            ? payload.detail
-            : "Could not update demo mode.",
-        );
-        return;
-      }
-      setStatus(payload);
-      setMessage(
-        payload.demo_mode
-          ? "Demo mode on — AI analysis stays off; sample demo still works."
-          : "Demo mode off — AI analysis is enabled for this backend.",
-      );
-    } catch {
-      setMessage("Could not reach the backend to update demo mode.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   if (!API_CONFIGURED || !API_URL) {
     return null;
   }
@@ -91,30 +53,12 @@ export function DemoModeToggle() {
       <h3>{status.demo_mode ? "Demo mode is on" : "Demo mode is off"}</h3>
       <p>
         {status.openai_configured
-          ? "OpenAI is configured. Turn demo mode off to analyze your own recordings."
-          : "Add OPENAI_API_KEY and OPENAI_MODEL in apps/api/.env before you can turn demo mode off."}
+          ? "OpenAI is configured. Demo mode is controlled by deployment configuration."
+          : "Add OPENAI_API_KEY and OPENAI_MODEL in the backend environment before AI analysis is available."}
       </p>
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          checked={status.demo_mode}
-          disabled={loading}
-          onChange={(event) => {
-            const enableDemo = event.target.checked;
-            if (!enableDemo && !status.can_disable_demo_mode) {
-              setMessage(
-                "Configure OPENAI_API_KEY and OPENAI_MODEL first, then turn demo mode off.",
-              );
-              return;
-            }
-            void toggle(enableDemo);
-          }}
-        />
-        <span className="toggle-ui" />
-        <span>
-          FLOWWRIGHT_DEMO_MODE={status.demo_mode ? "true" : "false"}
-        </span>
-      </label>
+      <p className="demo-mode-message">
+        FLOWWRIGHT_DEMO_MODE={status.demo_mode ? "true" : "false"}
+      </p>
       <div className="demo-mode-meta">
         <small>
           OpenAI: {status.openai_configured ? "configured" : "missing"}

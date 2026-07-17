@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 import { AnnouncementBar } from "../../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../../components/marketing/MarketingHeader";
 import {
@@ -9,7 +10,6 @@ import {
   API_URL,
   apiUnavailableMessage,
 } from "../../../lib/config";
-import { sampleWorkflow } from "../../../lib/sampleWorkflow";
 
 const cases = [
   ["invoice-exact-match.json", "Exact match"],
@@ -35,10 +35,45 @@ type ApprovalResponse = {
   status: "approved";
   message: string;
   approval_record_id: string;
+  compiled_workflow_id: string;
+  compiler_hash: string;
+  decision: "approved";
+  timestamp: string;
   protected_action_executed: false;
 };
 
 export default function GeneratedInvoiceProcessorPage() {
+  const workflowState = useMemo<
+    | { ok: true; workflow: WorkflowIR }
+    | { ok: false; error: string }
+  >(() => {
+    if (typeof window === "undefined") {
+      return { ok: false, error: "Workflow state is not available yet." };
+    }
+    const stored = window.sessionStorage.getItem("flowwright.workflow");
+    if (!stored) {
+      return {
+        ok: false,
+        error: "No workflow is loaded. Open an invoice workflow before running the generated application.",
+      };
+    }
+    try {
+      const workflow = workflowIRSchema.parse(JSON.parse(stored));
+      if (workflow.workflow_kind !== "invoice_approval") {
+        return {
+          ok: false,
+          error:
+            "Unsupported workflow kind. The invoice processor only runs invoice_approval workflows.",
+        };
+      }
+      return { ok: true, workflow };
+    } catch {
+      return {
+        ok: false,
+        error: "Saved workflow state is corrupted. Re-open the workflow before running the generated application.",
+      };
+    }
+  }, []);
   const [invoiceFile, setInvoiceFile] = useState<InvoiceCase>(cases[0][0]);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,18 +102,12 @@ export default function GeneratedInvoiceProcessorPage() {
     setApproval(null);
     setApprovalConfirmed(false);
     try {
-      const stored = window.sessionStorage.getItem("flowwright.workflow");
-      const workflow = stored ? JSON.parse(stored) : sampleWorkflow;
-      if (
-        workflow.workflow_kind &&
-        workflow.workflow_kind !== "invoice_approval"
-      ) {
-        throw new Error(
-          "Unsupported workflow kind. The invoice processor only runs invoice_approval workflows.",
-        );
-      }
+      if (!workflowState.ok) throw new Error(workflowState.error);
       const response = await fetch(`${API_URL}/api/v1/invoices/process`, {
-        body: JSON.stringify({ invoice_file: invoiceFile, workflow }),
+        body: JSON.stringify({
+          invoice_file: invoiceFile,
+          workflow: workflowState.workflow,
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -99,8 +128,20 @@ export default function GeneratedInvoiceProcessorPage() {
     setApproving(true);
     setError(null);
     try {
+      if (!workflowState.ok) throw new Error(workflowState.error);
+      if (!result.compiler_fingerprint) {
+        throw new Error("Cannot approve without a compiler hash from the processed workflow.");
+      }
       const response = await fetch(`${API_URL}/api/v1/invoices/approve`, {
-        body: JSON.stringify({ confirm: true, invoice_file: invoiceFile }),
+        body: JSON.stringify({
+          confirm: true,
+          invoice_file: invoiceFile,
+          workflow: workflowState.workflow,
+          compiled_workflow_id: workflowState.workflow.id,
+          compiler_hash: result.compiler_fingerprint,
+          decision: "approved",
+          timestamp: new Date().toISOString(),
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -158,10 +199,15 @@ export default function GeneratedInvoiceProcessorPage() {
             <button
               className="button button-amber"
               onClick={() => void process()}
-              disabled={running}
+              disabled={running || !workflowState.ok}
             >
               {running ? "Processing…" : "Process invoice →"}
             </button>
+            {!workflowState.ok && (
+              <div className="notice notice-error" role="alert">
+                {workflowState.error}
+              </div>
+            )}
             {error && (
               <div className="notice notice-error" role="alert">
                 {error}
@@ -223,6 +269,8 @@ export default function GeneratedInvoiceProcessorPage() {
                   <div className="approval-confirmation" role="status">
                     <strong>Approval recorded</strong>
                     <span>{approval.approval_record_id}</span>
+                    <span>{approval.compiled_workflow_id}</span>
+                    <span>{approval.compiler_hash}</span>
                     <small>{approval.message}</small>
                   </div>
                 )}

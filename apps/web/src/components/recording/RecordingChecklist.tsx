@@ -8,20 +8,20 @@ export function RecordingChecklist({
   hasEvents: boolean;
 }) {
   const checks = [
-    [hasRecording, "Screen recording captured"],
-    [hasDescription, "Task description added"],
-    [hasEvents, "Optional event log attached"],
+    [hasRecording, "Screen recording captured", true],
+    [hasDescription, "Task description added", true],
+    [hasEvents, "Event log attached", false],
   ] as const;
   return (
     <div className="recording-checklist">
       <span className="mono-label">Before compiling</span>
-      {checks.map(([complete, label]) => (
+      {checks.map(([complete, label, required]) => (
         <div key={label}>
           <span className={complete ? "check-box is-complete" : "check-box"}>
             {complete ? "✓" : ""}
           </span>
           <span>{label}</span>
-          <small>{complete ? "ready" : "optional"}</small>
+          <small>{complete ? "ready" : required ? "required" : "optional"}</small>
         </div>
       ))}
     </div>

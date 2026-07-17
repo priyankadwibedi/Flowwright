@@ -1,25 +1,43 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import * as esbuild from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const build = resolve(root, "build");
-const tsc = process.platform === "win32" ? "tsc.cmd" : "tsc";
 
 await rm(build, { force: true, recursive: true });
 await mkdir(build, { recursive: true });
-await new Promise((resolvePromise, reject) => {
-  const child = spawn(tsc, ["-p", resolve(root, "tsconfig.build.json")], {
-    cwd: root,
-    stdio: "inherit",
-    shell: process.platform === "win32",
-  });
-  child.on("error", reject);
-  child.on("exit", (code) =>
-    code === 0 ? resolvePromise() : reject(new Error(`tsc exited with ${code}`)),
-  );
-});
+
+const common = {
+  bundle: true,
+  logLevel: "info",
+  platform: "browser",
+  sourcemap: false,
+  target: "es2022",
+  treeShaking: true,
+};
+
+await Promise.all([
+  esbuild.build({
+    ...common,
+    entryPoints: [resolve(root, "src/content.ts")],
+    outfile: resolve(build, "content.js"),
+    format: "iife",
+  }),
+  esbuild.build({
+    ...common,
+    entryPoints: [resolve(root, "src/background.ts")],
+    outfile: resolve(build, "background.js"),
+    format: "esm",
+  }),
+  esbuild.build({
+    ...common,
+    entryPoints: [resolve(root, "src/popup.ts")],
+    outfile: resolve(build, "popup.js"),
+    format: "esm",
+  }),
+]);
 
 await cp(resolve(root, "public/popup.css"), resolve(build, "popup.css"));
 const popup = await readFile(resolve(root, "public/popup.html"), "utf8");
