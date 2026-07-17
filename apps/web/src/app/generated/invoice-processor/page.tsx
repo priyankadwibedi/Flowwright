@@ -4,13 +4,19 @@ import Link from "next/link";
 import { useState } from "react";
 import { AnnouncementBar } from "../../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../../components/marketing/MarketingHeader";
-import { API_URL } from "../../../lib/config";
+import {
+  API_CONFIGURED,
+  API_URL,
+  apiUnavailableMessage,
+} from "../../../lib/config";
+import { sampleWorkflow } from "../../../lib/sampleWorkflow";
 
 const cases = [
   ["invoice-exact-match.json", "Exact match"],
   ["invoice-amount-mismatch.json", "Amount mismatch"],
   ["invoice-missing-po.json", "Missing purchase order"],
   ["invoice-unreadable-number.json", "Unreadable invoice number"],
+  ["invoice-fifth-live-case.json", "One-cent difference"],
 ] as const;
 type InvoiceCase = (typeof cases)[number][0];
 
@@ -18,9 +24,10 @@ type Result = {
   invoice_file: string;
   status: "approval_required" | "exception" | "human_review";
   reason: string;
-  expected_total?: number | null;
-  actual_total?: number | null;
+  expected_total?: number | string | null;
+  actual_total?: number | string | null;
   protected_action_executed: boolean;
+  compiler_fingerprint?: string | null;
 };
 
 type ApprovalResponse = {
@@ -40,14 +47,38 @@ export default function GeneratedInvoiceProcessorPage() {
   const [approving, setApproving] = useState(false);
   const [approval, setApproval] = useState<ApprovalResponse | null>(null);
 
+  if (!API_CONFIGURED || !API_URL) {
+    return (
+      <main className="marketing-page">
+        <AnnouncementBar />
+        <MarketingHeader />
+        <section className="generated-page content-width">
+          <div className="eyebrow">Generated application / unavailable</div>
+          <h1>Invoice processor unavailable</h1>
+          <p className="generated-lede">{apiUnavailableMessage()}</p>
+        </section>
+      </main>
+    );
+  }
+
   async function process() {
     setRunning(true);
     setError(null);
     setApproval(null);
     setApprovalConfirmed(false);
     try {
+      const stored = window.sessionStorage.getItem("flowwright.workflow");
+      const workflow = stored ? JSON.parse(stored) : sampleWorkflow;
+      if (
+        workflow.workflow_kind &&
+        workflow.workflow_kind !== "invoice_approval"
+      ) {
+        throw new Error(
+          "Unsupported workflow kind. The invoice processor only runs invoice_approval workflows.",
+        );
+      }
       const response = await fetch(`${API_URL}/api/v1/invoices/process`, {
-        body: JSON.stringify({ invoice_file: invoiceFile }),
+        body: JSON.stringify({ invoice_file: invoiceFile, workflow }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -74,7 +105,8 @@ export default function GeneratedInvoiceProcessorPage() {
         method: "POST",
       });
       const payload = (await response.json()) as
-        { detail?: string } | ApprovalResponse;
+        | { detail?: string }
+        | ApprovalResponse;
       if (!response.ok) {
         throw new Error(
           "detail" in payload && payload.detail
@@ -90,17 +122,21 @@ export default function GeneratedInvoiceProcessorPage() {
     }
   }
 
+  function formatMoney(value: number | string | null | undefined) {
+    if (value == null) return "";
+    return String(value);
+  }
+
   return (
     <main className="marketing-page">
       <AnnouncementBar />
       <MarketingHeader />
       <section className="generated-page content-width">
         <div className="eyebrow">Generated application / invoice processor</div>
-        <h1>Run the compiled invoice workflow.</h1>
+        <h1>Run the compiled workflow.</h1>
         <p className="generated-lede">
-          This inspectable mini-application uses only the synthetic fixtures and
-          the trusted runtime. A matching invoice stops at a human approval
-          gate.
+          This mini-application uses the same InvoiceCompilerConfig interpreter
+          as generated source and artifact tests.
         </p>
         <div className="generated-layout">
           <section className="studio-card generated-card">
@@ -128,7 +164,7 @@ export default function GeneratedInvoiceProcessorPage() {
             </button>
             {error && (
               <div className="notice notice-error" role="alert">
-                {error}. Start the FastAPI backend to run the generated app.
+                {error}
               </div>
             )}
             {result && (
@@ -140,8 +176,13 @@ export default function GeneratedInvoiceProcessorPage() {
                 <p>Invoice: {result.invoice_file}</p>
                 {result.expected_total != null && (
                   <p>
-                    PO total ${result.expected_total.toFixed(2)} · invoice total
-                    ${result.actual_total?.toFixed(2)}
+                    PO total {formatMoney(result.expected_total)} · invoice
+                    total {formatMoney(result.actual_total)}
+                  </p>
+                )}
+                {result.compiler_fingerprint && (
+                  <p className="mono-label">
+                    fingerprint {result.compiler_fingerprint}
                   </p>
                 )}
                 <strong>
@@ -190,11 +231,10 @@ export default function GeneratedInvoiceProcessorPage() {
           </section>
           <aside className="studio-note">
             <span className="mono-label">Artifact boundary</span>
-            <h2>Trusted template only.</h2>
+            <h2>Shared compiler config.</h2>
             <p>
-              The generated artifact is deterministic, reviewable Python. It
-              does not execute arbitrary model output, shell commands, or
-              browser side effects.
+              Runtime behavior is driven by InvoiceCompilerConfig extracted from
+              WorkflowIR, matching the generated artifact.
             </p>
             <Link className="button button-outline" href="/workflows/demo">
               Inspect workflow IR

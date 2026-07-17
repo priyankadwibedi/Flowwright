@@ -3,14 +3,14 @@ import Link from "next/link";
 export function HeroPanel() {
   return (
     <div className="hero-panel" id="product">
-      <div className="eyebrow">AI workflow compiler</div>
+      <div className="eyebrow">Show the work. Ship the workflow.</div>
       <h1>
-        Show the work. <span>Ship the workflow.</span>
+        Turn a browser task into <span>tested software.</span>
       </h1>
       <p>
-        Record yourself completing a browser task. Flowwright identifies the
-        steps, decisions, and exceptions, then generates a tested application
-        that can repeat the process reliably.
+        Record yourself completing a task. Flowwright identifies the steps,
+        decisions, variables, and exceptions, then generates an inspectable
+        workflow, tested code, and a reusable application.
       </p>
       <div className="hero-actions">
         <Link className="button button-amber" href="/record">

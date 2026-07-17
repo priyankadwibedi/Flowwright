@@ -14,6 +14,7 @@ test("home, invoice demo, graph, and test results are reachable", async ({
           name: "Invoice approval",
           description: "Synthetic invoice workflow",
           version: "0.1.0",
+          workflow_kind: "invoice_approval",
           inputs: [],
           variables: [],
           steps: [
@@ -32,6 +33,7 @@ test("home, invoice demo, graph, and test results are reachable", async ({
           ],
           decisions: [],
           approvals: [],
+          uncertainties: [],
           tests: [
             {
               id: "exact",
@@ -140,12 +142,17 @@ test("home, invoice demo, graph, and test results are reachable", async ({
   );
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Show the work. Ship the workflow." }),
+    page.getByRole("heading", {
+      name: "Turn a browser task into tested software.",
+    }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Watch the demo" }).click();
   await expect(
-    page.getByRole("heading", { name: "Invoice approval" }),
+    page.getByRole("heading", {
+      name: "Review the workflow Flowwright inferred.",
+    }),
   ).toBeVisible();
+  await expect(page.getByText(/Invoice approval/i).first()).toBeVisible();
   await expect(page.locator(".workflow-canvas")).toBeVisible();
   await page.goto("/tests");
   await expect(page.getByText("Matching invoice")).toBeVisible();
@@ -168,4 +175,30 @@ test("mobile navigation and layout stay usable without horizontal overflow", asy
     () => document.documentElement.scrollWidth > window.innerWidth + 1,
   );
   expect(overflows).toBe(false);
+});
+
+test("record page uses centered layout without horizontal overflow", async ({
+  page,
+}) => {
+  const viewports = [
+    { width: 1920, height: 1080 },
+    { width: 1440, height: 900 },
+    { width: 1366, height: 768 },
+    { width: 1024, height: 768 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/record");
+    await expect(
+      page.getByRole("heading", { name: "Record the task once." }),
+    ).toBeVisible();
+    await expect(page.locator(".record-layout")).toBeVisible();
+    const overflows = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+    );
+    expect(overflows, `${viewport.width}x${viewport.height}`).toBe(false);
+  }
 });

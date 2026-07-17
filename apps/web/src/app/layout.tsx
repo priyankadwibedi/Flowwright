@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Flowwright",
-  description: "Show the work. Ship the workflow.",
+  description:
+    "Turn a browser task into tested software. Record a task once; Flowwright generates an inspectable workflow, tested code, and a reusable application.",
 };
 
 export default function RootLayout({

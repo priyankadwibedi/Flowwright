@@ -17,8 +17,40 @@ from app.models.workflow import (
     WorkflowInput,
     WorkflowIR,
     WorkflowStep,
+    WorkflowTest,
     WorkflowVariable,
 )
+
+INVOICE_SERVER_TESTS = [
+    WorkflowTest(
+        id="exact_match",
+        name="Matching invoice",
+        input_case={"invoice_file": "invoice-exact-match.json"},
+        expected_outcome="approval_required",
+        explanation="Server-owned exact match case for invoice_approval.",
+    ),
+    WorkflowTest(
+        id="amount_mismatch",
+        name="Amount mismatch",
+        input_case={"invoice_file": "invoice-amount-mismatch.json"},
+        expected_outcome="exception",
+        explanation="Server-owned mismatch case for invoice_approval.",
+    ),
+    WorkflowTest(
+        id="missing_purchase_order",
+        name="Missing purchase order",
+        input_case={"invoice_file": "invoice-missing-po.json"},
+        expected_outcome="human_review",
+        explanation="Server-owned missing PO case for invoice_approval.",
+    ),
+    WorkflowTest(
+        id="unreadable_invoice_number",
+        name="Unreadable invoice number",
+        input_case={"invoice_file": "invoice-unreadable-number.json"},
+        expected_outcome="human_review",
+        explanation="Server-owned unreadable number case for invoice_approval.",
+    ),
+]
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +63,62 @@ def _evidence_ids(request: AnalyzeRequest) -> set[str]:
     if request.processed_demonstration:
         return {item.id for item in request.processed_demonstration.evidence_timeline}
     return {str(item.get("id")) for item in request.browser_event_log or [] if item.get("id")}
+
+
+def _ensure_entry_input_step(
+    steps: list[WorkflowStep],
+    evidence_ids: set[str],
+) -> list[WorkflowStep]:
+    """Guarantee a type=input entry step so graph validation can succeed.
+
+    Models often label the first action as ai_extract/lookup and omit input.
+    Prefer promoting a root step; otherwise insert a synthetic entry step.
+    """
+    if any(step.type == "input" for step in steps):
+        return steps
+
+    root_indexes = [
+        index for index, step in enumerate(steps) if not step.depends_on
+    ]
+    seed_evidence = sorted(evidence_ids)[:2]
+
+    if root_indexes:
+        index = root_indexes[0]
+        root = steps[index]
+        promoted = root.model_copy(
+            update={
+                "type": "input",
+                "requires_ai": False,
+                "requires_approval": False,
+                "evidence_ids": root.evidence_ids or seed_evidence,
+                "description": root.description
+                or "Entry point for the demonstrated workflow input.",
+            }
+        )
+        return [promoted if i == index else step for i, step in enumerate(steps)]
+
+    entry_id = "workflow-input"
+    if any(step.id == entry_id for step in steps):
+        entry_id = "workflow-entry-input"
+    entry = WorkflowStep(
+        id=entry_id,
+        name="Workflow input",
+        type="input",
+        description="Entry point inferred because the model omitted an input step.",
+        depends_on=[],
+        input_refs=[],
+        output_refs=[],
+        configuration={},
+        requires_ai=False,
+        requires_approval=False,
+        confidence=0.4,
+        evidence_ids=seed_evidence,
+    )
+    rewritten = [
+        step.model_copy(update={"depends_on": [entry_id, *step.depends_on]})
+        for step in steps
+    ]
+    return [entry, *rewritten]
 
 
 def _draft_to_ir(draft: WorkflowDraft, request: AnalyzeRequest) -> WorkflowIR:
@@ -95,6 +183,7 @@ def _draft_to_ir(draft: WorkflowDraft, request: AnalyzeRequest) -> WorkflowIR:
         )
         for step in draft.steps
     ]
+    steps = _ensure_entry_input_step(steps, valid_evidence)
     decisions = [
         WorkflowDecision(
             id=decision.id,
@@ -178,11 +267,17 @@ def _draft_to_ir(draft: WorkflowDraft, request: AnalyzeRequest) -> WorkflowIR:
     ]
     if draft.decisions:
         confidence_values.extend(decision.confidence for decision in draft.decisions)
+    demonstration_id = None
+    if request.processed_demonstration and request.processed_demonstration.demonstration_id:
+        demonstration_id = request.processed_demonstration.demonstration_id
+    tests = INVOICE_SERVER_TESTS if draft.workflow_kind == "invoice_approval" else []
     return WorkflowIR(
         id=_slug(draft.name),
         name=draft.name,
         description=draft.description,
         version="0.1.0",
+        workflow_kind=draft.workflow_kind,
+        demonstration_id=demonstration_id,
         inputs=[
             WorkflowInput(
                 id="demonstration_input",
@@ -198,7 +293,7 @@ def _draft_to_ir(draft: WorkflowDraft, request: AnalyzeRequest) -> WorkflowIR:
         approvals=approvals,
         edges=edges,
         uncertainties=draft.uncertainties,
-        tests=[],
+        tests=tests,
         confidence=sum(confidence_values) / len(confidence_values) if confidence_values else 0.0,
         created_at=datetime.now(UTC),
     )
@@ -244,7 +339,15 @@ class OpenAIWorkflowAnalyzer:
             "exceptions, human judgment, safety boundaries, approval requirements, "
             "missing information, and uncertainty. Every inferred step, variable, and "
             "decision must reference supplied evidence IDs. Never claim certainty "
-            "without evidence.\n\n"
+            "without evidence. "
+            "The step list must include at least one step with type exactly \"input\" as "
+            "the graph entry point (for invoice flows this is usually invoice upload). "
+            "Downstream steps must depend_on that input step (directly or indirectly). "
+            "Set workflow_kind to invoice_approval only when the "
+            "demonstration clearly shows invoice field extraction, purchase-order "
+            "lookup, amount comparison, and a human approval gate. Otherwise set "
+            "workflow_kind to unsupported. For uncertainties, include answer_type, "
+            "allowed_options, and resolution_target when asking clarifying questions.\n\n"
             f"Task description:\n{task_description}\n\n"
             f"Transcript:\n{processed_demonstration.transcript}\n\n"
             f"Evidence timeline:\n{evidence_summary}"

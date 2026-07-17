@@ -3,6 +3,8 @@
   "name": "Invoice approval",
   "description": "Extract invoice fields, find the matching purchase order, compare totals, and route uncertain or high-impact actions for human approval.",
   "version": "0.1.0",
+  "workflow_kind": "invoice_approval",
+  "demonstration_id": null,
   "inputs": [
     {
       "id": "invoice_document",
@@ -284,7 +286,10 @@
       "question": "Should an exception be saved as a draft or sent for review?",
       "reason": "The demonstration shows a flagged mismatch but does not establish a delivery channel.",
       "affected_step_ids": ["flag_exception"],
-      "required": false
+      "required": false,
+      "answer_type": "single_select",
+      "allowed_options": ["draft", "human_review"],
+      "resolution_target": "exception-delivery"
     }
   ],
   "tests": [

@@ -1,0 +1,9 @@
+{
+  "supplier": "Harbor Supply Co",
+  "invoice_number": "INV-DEMO-1005",
+  "purchase_order": "PO-1001",
+  "date": "2026-07-10",
+  "currency": "USD",
+  "total": 1250.01,
+  "field_confidence": 0.97
+}

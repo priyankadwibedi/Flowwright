@@ -26,6 +26,6 @@ jobs:
       - working-directory: apps/api
         run: uv sync --locked
       - working-directory: apps/api
-        run: uv run pytest
+        run: uv run pytest --cov=app/services --cov-report=term-missing --cov-fail-under=55
       - working-directory: apps/api
         run: uv run ruff check .

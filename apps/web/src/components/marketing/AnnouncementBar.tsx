@@ -5,7 +5,7 @@ export function AnnouncementBar() {
         ✦
       </span>
       <span>
-        Flowwright is being built for the OpenAI × NamasteDev Codex Hackathon
+        Flowwright is being built for the OpenAI Codex × NamasteDev Hackathon
       </span>
     </div>
   );

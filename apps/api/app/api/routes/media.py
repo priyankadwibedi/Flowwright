@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
@@ -9,11 +10,24 @@ from app.services.keyframe_extractor import KeyframeExtractionError, extract_key
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
 SUPPORTED_TYPES = {"video/webm": ".webm", "video/mp4": ".mp4", "video/quicktime": ".mov"}
+EXTENSION_SUFFIXES = {".webm": ".webm", ".mp4": ".mp4", ".mov": ".mov"}
+
+
+def _resolve_video_suffix(content_type: str | None, filename: str | None) -> str | None:
+    """Accept bare types and MediaRecorder variants like video/webm;codecs=vp9,opus."""
+    normalized = (content_type or "").split(";", 1)[0].strip().lower()
+    if normalized in SUPPORTED_TYPES:
+        return SUPPORTED_TYPES[normalized]
+    name = (filename or "").lower()
+    for extension, suffix in EXTENSION_SUFFIXES.items():
+        if name.endswith(extension):
+            return suffix
+    return None
 
 
 async def _read_video(file: UploadFile) -> tuple[bytes, str]:
     settings = get_settings()
-    suffix = SUPPORTED_TYPES.get(file.content_type or "")
+    suffix = _resolve_video_suffix(file.content_type, file.filename)
     if not suffix:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -38,18 +52,35 @@ async def keyframes(file: UploadFile = File(...)) -> dict[str, object]:  # noqa:
     settings = get_settings()
     content, suffix = await _read_video(file)
     try:
-        duration, frames = extract_keyframes(
+        duration, frames = await asyncio.to_thread(
+            extract_keyframes,
             _Reader(content),
             suffix,
             settings.max_keyframes,
-            max_width=settings.max_frame_width,
-            jpeg_quality=settings.jpeg_quality,
+            settings.max_frame_width,
+            settings.jpeg_quality,
         )
     except KeyframeExtractionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+    if duration > settings.max_video_duration_seconds:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Video duration exceeds the configured maximum",
+        )
+    for frame in frames:
+        if frame.width > settings.max_decoded_width or frame.height > settings.max_decoded_height:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Decoded frame resolution exceeds the configured maximum",
+            )
+        if len(frame.image_base64) > settings.max_base64_frame_chars:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Frame payload exceeds the configured maximum",
+            )
     return {
         "filename": file.filename,
         "content_type": file.content_type,
@@ -70,7 +101,20 @@ async def process_uploaded_demonstration(
     content, suffix = await _read_video(file)
     try:
         events = parse_event_log_json(event_log)
-        return process_demonstration(content, suffix, settings, events)
+        if len(events) > settings.max_browser_events:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Browser event log exceeds {settings.max_browser_events} events",
+            )
+        result = await asyncio.wait_for(
+            asyncio.to_thread(process_demonstration, content, suffix, settings, events),
+            timeout=settings.processing_timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Demonstration processing timed out",
+        ) from exc
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -81,6 +125,17 @@ async def process_uploaded_demonstration(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+    if len(result.evidence_timeline) > settings.max_evidence_items:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Evidence timeline exceeds the configured maximum",
+        )
+    if len(result.transcript) > settings.max_transcript_chars:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Transcript exceeds the configured maximum",
+        )
+    return result
 
 
 class _Reader:

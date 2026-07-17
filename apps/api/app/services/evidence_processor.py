@@ -6,12 +6,14 @@ import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
 
 from app.core.config import Settings
 from app.models.workflow import (
@@ -19,11 +21,29 @@ from app.models.workflow import (
     EvidenceItem,
     MetadataEntry,
     ProcessedDemonstration,
+    TranscriptionStatus,
     TranscriptSegment,
 )
 from app.services.keyframe_extractor import extract_keyframes
 
 logger = logging.getLogger(__name__)
+
+GPT_TRANSCRIBE_MODELS = frozenset({"gpt-4o-transcribe", "gpt-4o-mini-transcribe"})
+WHISPER_MODELS = frozenset({"whisper-1"})
+SUPPORTED_TRANSCRIPTION_MODELS = GPT_TRANSCRIBE_MODELS | WHISPER_MODELS
+
+
+class TranscriptionConfigError(ValueError):
+    """Raised when transcription settings are invalid."""
+
+
+def validate_transcription_model(model: str) -> str:
+    if model not in SUPPORTED_TRANSCRIPTION_MODELS:
+        raise TranscriptionConfigError(
+            f"Unsupported transcription model '{model}'. "
+            f"Supported: {sorted(SUPPORTED_TRANSCRIPTION_MODELS)}"
+        )
+    return model
 
 
 def _normalise_events(raw_events: list[Mapping[str, object]] | None) -> list[BrowserEvent]:
@@ -103,14 +123,60 @@ def _extract_audio(video_bytes: bytes, suffix: str) -> tuple[bytes | None, str]:
                     os.unlink(path)
 
 
+def build_transcription_request_kwargs(model: str) -> dict[str, Any]:
+    """Return provider kwargs for the configured transcription model."""
+    validate_transcription_model(model)
+    if model in GPT_TRANSCRIBE_MODELS:
+        return {"model": model, "response_format": "json"}
+    return {
+        "model": model,
+        "response_format": "verbose_json",
+        "timestamp_granularities": ["segment"],
+    }
+
+
+def _map_transcription_error(exc: Exception) -> TranscriptionStatus:
+    if isinstance(exc, RateLimitError):
+        logger.warning("transcription_failed category=rate_limit")
+        return "rate_limited"
+    if isinstance(exc, APITimeoutError):
+        logger.warning("transcription_failed category=timeout")
+        return "timeout"
+    if isinstance(exc, APIConnectionError):
+        logger.warning("transcription_failed category=provider_connection")
+        return "failed"
+    if isinstance(exc, APIStatusError):
+        logger.warning(
+            "transcription_failed category=provider_status status=%s",
+            getattr(exc, "status_code", None),
+        )
+        return "failed"
+    logger.warning(
+        "transcription_failed category=invalid_or_unexpected error_type=%s",
+        type(exc).__name__,
+    )
+    return "invalid_response"
+
+
 def _transcribe(
     audio_bytes: bytes | None,
     settings: Settings,
-) -> tuple[str, list[TranscriptSegment], str]:
+    duration_seconds: float = 0.0,
+) -> tuple[str, list[TranscriptSegment], TranscriptionStatus]:
     if not settings.openai_api_key:
-        return "", [], "unavailable"
+        return "", [], "missing_api_key"
     if not audio_bytes:
-        return "", [], "unavailable"
+        return "", [], "missing_audio"
+
+    try:
+        request_kwargs = build_transcription_request_kwargs(settings.openai_transcription_model)
+    except TranscriptionConfigError:
+        logger.error(
+            "transcription_failed category=invalid_config model=%s",
+            settings.openai_transcription_model,
+        )
+        return "", [], "failed"
+
     audio_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as audio_file:
@@ -122,31 +188,54 @@ def _transcribe(
             max_retries=settings.openai_max_retries,
         )
         with audio_path.open("rb") as source:
-            response = client.audio.transcriptions.create(
-                model=settings.openai_transcription_model,
-                file=source,
-                response_format="verbose_json",
-                timestamp_granularities=["segment"],
-            )
+            response = client.audio.transcriptions.create(file=source, **request_kwargs)
+
         transcript = str(getattr(response, "text", "") or "").strip()
+        if not transcript and isinstance(response, dict):
+            transcript = str(response.get("text") or "").strip()
+        if not transcript:
+            return "", [], "invalid_response"
+
         segments: list[TranscriptSegment] = []
-        for index, raw_segment in enumerate(getattr(response, "segments", None) or []):
-            start = float(getattr(raw_segment, "start", 0.0) or 0.0)
-            end = float(getattr(raw_segment, "end", start) or start)
-            text = str(getattr(raw_segment, "text", "") or "").strip()
-            if text:
-                segments.append(
-                    TranscriptSegment(
-                        id=f"speech-{index + 1}",
-                        start_seconds=max(0.0, start),
-                        end_seconds=max(start, end),
-                        text=text,
+        model = settings.openai_transcription_model
+        if model in WHISPER_MODELS:
+            raw_segments = getattr(response, "segments", None)
+            if raw_segments is None and isinstance(response, dict):
+                raw_segments = response.get("segments")
+            for index, raw_segment in enumerate(raw_segments or []):
+                if isinstance(raw_segment, dict):
+                    start = float(raw_segment.get("start", 0.0) or 0.0)
+                    end = float(raw_segment.get("end", start) or start)
+                    text = str(raw_segment.get("text", "") or "").strip()
+                else:
+                    start = float(getattr(raw_segment, "start", 0.0) or 0.0)
+                    end = float(getattr(raw_segment, "end", start) or start)
+                    text = str(getattr(raw_segment, "text", "") or "").strip()
+                if text:
+                    segments.append(
+                        TranscriptSegment(
+                            id=f"speech-{index + 1}",
+                            start_seconds=max(0.0, start),
+                            end_seconds=max(start, end),
+                            text=text,
+                        )
                     )
+        else:
+            # GPT transcribe models: one synthetic segment covering the audio duration.
+            end = max(duration_seconds, 0.0)
+            segments.append(
+                TranscriptSegment(
+                    id="speech-1",
+                    start_seconds=0.0,
+                    end_seconds=end,
+                    text=transcript,
                 )
-        return transcript, segments, "available" if transcript else "failed"
-    except Exception:  # API-specific errors are intentionally not exposed to clients.
-        logger.exception("transcription request failed")
-        return "", [], "failed"
+            )
+        return transcript, segments, "available"
+    except (RateLimitError, APITimeoutError, APIConnectionError, APIStatusError) as exc:
+        return "", [], _map_transcription_error(exc)
+    except Exception as exc:  # noqa: BLE001 - map unexpected provider payloads
+        return "", [], _map_transcription_error(exc)
     finally:
         if audio_path is not None:
             with suppress(FileNotFoundError):
@@ -168,7 +257,9 @@ def process_demonstration(
     )
     browser_events = _normalise_events(raw_events)
     audio_bytes, audio_status = _extract_audio(video_bytes, suffix)
-    transcript, transcript_segments, transcription_status = _transcribe(audio_bytes, settings)
+    transcript, transcript_segments, transcription_status = _transcribe(
+        audio_bytes, settings, duration_seconds=duration
+    )
     evidence: list[EvidenceItem] = []
     for frame in frames:
         evidence.append(
@@ -177,12 +268,15 @@ def process_demonstration(
                 timestamp_seconds=frame.timestamp_seconds,
                 source="frame",
                 content=f"Video frame at {frame.timestamp_seconds:.3f}s",
-                image_base64=frame.image_base64,
+                frame_id=frame.id,
+                image_base64=None,
                 metadata=[
                     MetadataEntry(key="frame_index", value=str(frame.frame_index)),
                     MetadataEntry(key="width", value=str(frame.width)),
                     MetadataEntry(key="height", value=str(frame.height)),
                 ],
+                observation_kind="direct",
+                confidence=1.0,
             )
         )
     for event in browser_events:
@@ -196,6 +290,8 @@ def process_demonstration(
                     MetadataEntry(key="url", value=event.url),
                     MetadataEntry(key="policy", value=event.value_policy),
                 ],
+                observation_kind="direct",
+                confidence=1.0,
             )
         )
     for segment in transcript_segments:
@@ -206,15 +302,18 @@ def process_demonstration(
                 source="speech",
                 content=segment.text,
                 metadata=[MetadataEntry(key="end_seconds", value=str(segment.end_seconds))],
+                observation_kind="direct",
+                confidence=1.0,
             )
         )
     evidence.sort(key=lambda item: (item.timestamp_seconds, item.id))
     return ProcessedDemonstration(
+        demonstration_id=str(uuid.uuid4()),
         duration_seconds=duration,
         frames=frames,
         transcript=transcript,
         transcript_segments=transcript_segments,
-        transcription_status=transcription_status,  # type: ignore[arg-type]
+        transcription_status=transcription_status,
         audio_status=audio_status,  # type: ignore[arg-type]
         browser_events=browser_events,
         evidence_timeline=evidence,
