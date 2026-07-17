@@ -1,6 +1,5 @@
-from pydantic import BaseModel, Field
-
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 
 from app.core.config import capability_status, get_settings, set_demo_mode
 
