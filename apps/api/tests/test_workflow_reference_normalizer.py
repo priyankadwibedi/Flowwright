@@ -142,9 +142,15 @@ def test_unknown_evidence_is_dropped_or_remapped():
     assert "frame-999999" not in step2.evidence_ids
     assert step2.evidence_ids  # remapped/fallback kept a real ID
     assert all(item.startswith("frame-") for item in step2.evidence_ids)
+    warning_actions = [warning.action for warning in result.warnings]
     assert any(
-        warning.action in {"dropped_unknown_evidence", "remapped_evidence_id", "attached_fallback_evidence"}
-        for warning in result.warnings
+        action
+        in {
+            "dropped_unknown_evidence",
+            "remapped_evidence_id",
+            "attached_fallback_evidence",
+        }
+        for action in warning_actions
     )
 
 
