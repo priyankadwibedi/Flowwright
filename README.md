@@ -58,6 +58,13 @@ scripts           Schema export and setup verification
 
 Node.js 24 LTS, pnpm, Next.js, React, TypeScript, Tailwind CSS, custom UI primitives, `@xyflow/react`, Zod, Playwright (Node e2e), Python 3.12+, FastAPI, Pydantic, pydantic-settings, OpenAI Python SDK, OpenCV, FFmpeg-compatible video decoding, pytest, HTTPX.
 
+## HOSTED LIVE LINK 
+```bash
+Frontend: https://priyankadwibedi.github.io/Flowwright
+
+Backend API: https://flowwright.onrender.com
+Health check: https://flowwright.onrender.com/health
+```
 ## Local setup
 
 Prerequisites: Node.js 24 LTS, pnpm 11+, Python 3.12+, uv, and (for video extraction) FFmpeg codecs available to OpenCV.
