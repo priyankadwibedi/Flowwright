@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Response, status
 from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError, RateLimitError
@@ -6,7 +6,11 @@ from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError
 from app.core.config import get_settings
 from app.models.test_result import TestRunResponse
 from app.models.workflow import (
+    AnalysisErrorDetail,
+    AnalysisIssue,
     AnalyzeRequest,
+    CompileReadinessRequest,
+    CompileReadinessResponse,
     CorrectWorkflowRequest,
     ExecutableWorkflow,
     InvoiceApprovalRequest,
@@ -19,20 +23,37 @@ from app.models.workflow import (
 )
 from app.services.clarifications import ClarificationError, apply_clarifications
 from app.services.code_generator import artifact_zip, generate_invoice_artifact
+from app.services.compile_readiness import assert_compile_ready, evaluate_compile_readiness
 from app.services.demo_analyzer import DemoWorkflowAnalyzer
 from app.services.invoice_compiler import CompilerRejectedError, extract_invoice_compiler_config
 from app.services.invoice_runtime import approve_fixture, process_fixture
 from app.services.openai_analyzer import OpenAIWorkflowAnalyzer
+from app.services.workflow_reference_normalizer import ReferenceNormalizationError
 from app.services.workflow_tester import run_invoice_tests
 from app.services.workflow_validation import WorkflowValidationError, validate_workflow_ir
 
 router = APIRouter(prefix="/api/v1/workflows", tags=["workflows"])
 
 
+def _analysis_error_detail(
+    message: str,
+    *,
+    code: str = "workflow_reference_validation_failed",
+    retryable: bool = True,
+    issues: list[AnalysisIssue] | None = None,
+) -> dict:
+    return AnalysisErrorDetail(
+        code=code,
+        message=message,
+        retryable=retryable,
+        issues=issues or [],
+    ).model_dump()
+
+
 def _ensure_invoice_kind(workflow: WorkflowIR) -> None:
     if workflow.workflow_kind != "invoice_approval":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 "This workflow is marked unsupported for compilation. "
                 "Only workflow_kind=invoice_approval can generate code, run tests, "
@@ -44,6 +65,11 @@ def _ensure_invoice_kind(workflow: WorkflowIR) -> None:
 @router.get("/demo", response_model=WorkflowIR)
 def demo_workflow() -> WorkflowIR:
     return DemoWorkflowAnalyzer().analyze("invoice approval")
+
+
+@router.post("/compile-readiness", response_model=CompileReadinessResponse)
+def compile_readiness(request: CompileReadinessRequest) -> CompileReadinessResponse:
+    return evaluate_compile_readiness(request.workflow)
 
 
 @router.post("/analyze", response_model=WorkflowIR)
@@ -66,7 +92,6 @@ def analyze_workflow(request: AnalyzeRequest) -> WorkflowIR:
             screenshots=request.screenshots,
             processed_demonstration=request.processed_demonstration,
         )
-        validate_workflow_ir(workflow)
         return workflow
     except RateLimitError as exc:
         raise HTTPException(
@@ -83,10 +108,36 @@ def analyze_workflow(request: AnalyzeRequest) -> WorkflowIR:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI provider request failed",
         ) from exc
+    except ReferenceNormalizationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_analysis_error_detail(
+                str(exc) or "The inferred workflow contained invalid data references.",
+                issues=[
+                    AnalysisIssue(
+                        step_id=issue.step_id,
+                        reference=issue.reference,
+                        reference_type=issue.reference_type,  # type: ignore[arg-type]
+                        expected_location=issue.expected_location,
+                        message=issue.message,
+                    )
+                    for issue in exc.issues
+                ],
+            ),
+        ) from exc
     except (RuntimeError, ValueError, WorkflowValidationError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_analysis_error_detail(
+                str(exc) or "The inferred workflow failed validation.",
+                code="workflow_validation_failed",
+                issues=[
+                    AnalysisIssue(
+                        reference_type="validation",
+                        message=str(exc),
+                    )
+                ],
+            ),
         ) from exc
 
 
@@ -94,11 +145,12 @@ def analyze_workflow(request: AnalyzeRequest) -> WorkflowIR:
 def test_workflow(workflow: WorkflowIR) -> TestRunResponse:
     _ensure_invoice_kind(workflow)
     try:
+        assert_compile_ready(workflow)
         validate_workflow_ir(workflow)
         return run_invoice_tests(workflow)
     except (ValueError, CompilerRejectedError, WorkflowValidationError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -109,7 +161,7 @@ def resolve_workflow(request: ResolveRequest) -> ResolveResponse:
         return apply_clarifications(request.workflow, request.answers)
     except ClarificationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -125,7 +177,7 @@ def correct_workflow(request: CorrectWorkflowRequest) -> WorkflowIR:
     for correction in request.corrections:
         if correction.step_id not in step_ids:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Unknown correction step_id: {correction.step_id}",
             )
         if (
@@ -135,22 +187,22 @@ def correct_workflow(request: CorrectWorkflowRequest) -> WorkflowIR:
             and not correction.require_human_approval
         ):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Correction must include a supported change",
             )
         if correction.rename is not None and not correction.rename.strip():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Correction rename cannot be blank",
             )
         if correction.variable_id is not None and correction.variable_id not in variable_ids:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Unknown correction variable_id: {correction.variable_id}",
             )
         if correction.mark_constant is not None and correction.variable_id is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="mark_constant requires variable_id",
             )
         steps = [
@@ -215,11 +267,12 @@ def correct_workflow(request: CorrectWorkflowRequest) -> WorkflowIR:
 def generate_workflow(workflow: WorkflowIR) -> ExecutableWorkflow:
     _ensure_invoice_kind(workflow)
     try:
+        assert_compile_ready(workflow)
         validate_workflow_ir(workflow)
         return generate_invoice_artifact(workflow)
     except (ValueError, CompilerRejectedError, WorkflowValidationError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -228,11 +281,12 @@ def generate_workflow(workflow: WorkflowIR) -> ExecutableWorkflow:
 def create_workflow_artifact(workflow: WorkflowIR) -> Response:
     _ensure_invoice_kind(workflow)
     try:
+        assert_compile_ready(workflow)
         validate_workflow_ir(workflow)
         artifact = generate_invoice_artifact(workflow)
     except (ValueError, CompilerRejectedError, WorkflowValidationError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     filename = f"flowwright-{workflow.id}-workflow.zip"
@@ -270,6 +324,7 @@ def process_invoice(request: InvoiceProcessRequest) -> dict[str, object]:
     try:
         if request.workflow is not None:
             _ensure_invoice_kind(request.workflow)
+            assert_compile_ready(request.workflow)
         result = process_fixture(request.invoice_file, request.workflow)
     except (ValueError, CompilerRejectedError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -285,29 +340,35 @@ def approve_invoice(request: InvoiceApprovalRequest) -> InvoiceApprovalResponse:
         )
     try:
         _ensure_invoice_kind(request.workflow)
+        assert_compile_ready(request.workflow)
         artifact = generate_invoice_artifact(request.workflow)
         if request.compiled_workflow_id != artifact.workflow_id:
             raise ValueError("Approval workflow identity does not match compiled workflow")
-        if request.compiler_hash != (artifact.compiler_fingerprint or ""):
-            raise ValueError("Approval compiler hash does not match compiled workflow")
+        if request.compiler_fingerprint != (artifact.compiler_fingerprint or ""):
+            raise ValueError(
+                "Approval compiler fingerprint does not match compiled workflow"
+            )
         record_id = approve_fixture(request.invoice_file, request.workflow)
     except (ValueError, CompilerRejectedError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
+    recorded_at = datetime.now(UTC)
     return InvoiceApprovalResponse(
         invoice_file=request.invoice_file,
         status="approved",
         message=(
-            "Synthetic approval receipt created. "
-            "No persistent approval store or external action was used."
+            "Synthetic approval receipt generated. Non-persistent. "
+            "No payment executed and no external system changed."
         ),
         approval_record_id=record_id,
         compiled_workflow_id=request.compiled_workflow_id,
-        compiler_hash=request.compiler_hash,
+        compiler_fingerprint=request.compiler_fingerprint,
         decision=request.decision,
-        timestamp=request.timestamp.astimezone(UTC)
-        if request.timestamp.tzinfo
-        else request.timestamp.replace(tzinfo=UTC),
+        recorded_at=recorded_at,
+        protected_action_executed=False,
+        persistent=False,
+        external_action_executed=False,
+        payment_executed=False,
     )

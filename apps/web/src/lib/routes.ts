@@ -7,6 +7,7 @@ export const routes = {
   record: "/record",
   architecture: "/architecture",
   demo: "/workflows/demo",
+  inferred: "/workflows/inferred",
   code: "/code",
   tests: "/tests",
   generatedInvoice: "/generated/invoice-processor",

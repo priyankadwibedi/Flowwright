@@ -180,12 +180,21 @@ def _readme_source(workflow: WorkflowIR, config: InvoiceCompilerConfig) -> str:
     )
 
 
+def _artifact_source(workflow: WorkflowIR) -> str:
+    if workflow.demonstration_id:
+        return "inferred"
+    if workflow.id in {"invoice-approval-demo"}:
+        return "sample"
+    return "inferred"
+
+
 def generate_invoice_artifact(workflow: WorkflowIR) -> ExecutableWorkflow:
     try:
         config = extract_invoice_compiler_config(workflow)
     except CompilerRejectedError as exc:
         raise ValueError(str(exc)) from exc
     fingerprint = config_fingerprint(config)
+    source = _artifact_source(workflow)
     files = [
         GeneratedFile(
             path="workflow.py", language="python", content=_workflow_source(config)
@@ -198,6 +207,18 @@ def generate_invoice_artifact(workflow: WorkflowIR) -> ExecutableWorkflow:
             language="markdown",
             content=_readme_source(workflow, config),
         ),
+        GeneratedFile(
+            path="artifact_meta.json",
+            language="json",
+            content=(
+                "{\n"
+                f'  "workflow_source": "{source}",\n'
+                f'  "workflow_id": "{workflow.id}",\n'
+                f'  "workflow_version": "{workflow.version}",\n'
+                f'  "compiler_hash": "{fingerprint}"\n'
+                "}\n"
+            ),
+        ),
     ]
     return ExecutableWorkflow(
         workflow_id=workflow.id,
@@ -207,6 +228,9 @@ def generate_invoice_artifact(workflow: WorkflowIR) -> ExecutableWorkflow:
         generator_version=GENERATOR_VERSION,
         compiler_fingerprint=fingerprint,
         workflow_kind=workflow.workflow_kind,
+        workflow_source=source,  # type: ignore[arg-type]
+        workflow_version=workflow.version,
+        compiler_hash=fingerprint,
     )
 
 

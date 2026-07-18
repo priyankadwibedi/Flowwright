@@ -41,7 +41,7 @@ async def _read_video(file: UploadFile) -> tuple[bytes, str]:
         )
     if not content:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Video upload is empty",
         )
     return content, suffix
@@ -62,23 +62,23 @@ async def keyframes(file: UploadFile = File(...)) -> dict[str, object]:  # noqa:
         )
     except KeyframeExtractionError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     if duration > settings.max_video_duration_seconds:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Video duration exceeds the configured maximum",
         )
     for frame in frames:
         if frame.width > settings.max_decoded_width or frame.height > settings.max_decoded_height:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Decoded frame resolution exceeds the configured maximum",
             )
         if len(frame.image_base64) > settings.max_base64_frame_chars:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Frame payload exceeds the configured maximum",
             )
     return {
@@ -103,7 +103,7 @@ async def process_uploaded_demonstration(
         events = parse_event_log_json(event_log)
         if len(events) > settings.max_browser_events:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Browser event log exceeds {settings.max_browser_events} events",
             )
         result = await asyncio.wait_for(
@@ -117,22 +117,22 @@ async def process_uploaded_demonstration(
         ) from exc
     except (ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     except KeyframeExtractionError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     if len(result.evidence_timeline) > settings.max_evidence_items:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Evidence timeline exceeds the configured maximum",
         )
     if len(result.transcript) > settings.max_transcript_chars:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Transcript exceeds the configured maximum",
         )
     return result

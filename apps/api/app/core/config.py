@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     anonymous_daily_quota: int = Field(default=100, ge=1, le=10_000)
     hackathon_access_token: str | None = None
     retain_media: bool = False
+    flowwright_ai_repair_enabled: bool = True
     max_keyframes: int = Field(default=8, ge=1, le=8)
     max_frame_width: int = Field(default=1280, ge=320, le=1920)
     jpeg_quality: int = Field(default=75, ge=50, le=95)

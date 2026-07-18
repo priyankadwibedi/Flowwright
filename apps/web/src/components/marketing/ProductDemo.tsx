@@ -69,9 +69,7 @@ export function ProductDemo() {
               <span>
                 <b>
                   {workflow
-                    ? usingStaticSample
-                      ? "Static sample workflow"
-                      : "Workflow compiled"
+                    ? "Sample WorkflowIR loaded"
                     : error
                       ? "Demo unavailable"
                       : "Loading workflow"}
@@ -83,7 +81,11 @@ export function ProductDemo() {
                 </small>
               </span>
             </div>
-            <WorkflowInspector workflow={workflow} step={selectedStep} />
+            <WorkflowInspector
+              workflow={workflow}
+              step={selectedStep}
+              origin="sample"
+            />
             <WorkflowLegend />
           </aside>
           <div className="demo-canvas">
@@ -91,6 +93,7 @@ export function ProductDemo() {
               workflow={workflow}
               selectedStepId={selectedId}
               onSelectStep={setSelectedId}
+              origin="sample"
             />
           </div>
         </div>

@@ -1,10 +1,15 @@
-"""Semantic WorkflowIR graph validation."""
-
-from __future__ import annotations
-
+import logging
 from collections import defaultdict, deque
 
 from app.models.workflow import WorkflowIR
+from app.services.workflow_reference_normalizer import EVIDENCE_PREFIXES
+
+logger = logging.getLogger(__name__)
+
+
+def _looks_like_evidence(value: str) -> bool:
+    lowered = value.lower()
+    return any(lowered.startswith(prefix) for prefix in EVIDENCE_PREFIXES)
 
 
 class WorkflowValidationError(ValueError):
@@ -52,8 +57,15 @@ def validate_workflow_ir(workflow: WorkflowIR) -> None:
     _unique([item.id for item in workflow.uncertainties], "uncertainty")
 
     step_ids = {step.id for step in workflow.steps}
+    input_ids = {item.id for item in workflow.inputs}
+    variable_ids = {item.id for item in workflow.variables}
+    produced_refs = {
+        ref for step in workflow.steps for ref in step.output_refs
+    }
+    known_refs = input_ids | variable_ids | step_ids | produced_refs
     input_step_ids = {step.id for step in workflow.steps if step.type == "input"}
     require_ai_evidence = bool(workflow.demonstration_id)
+    active_steps = {step.id for step in workflow.steps if not step.accidental}
 
     for step in workflow.steps:
         for dependency in step.depends_on:
@@ -63,6 +75,15 @@ def validate_workflow_ir(workflow: WorkflowIR) -> None:
                 )
             if dependency == step.id:
                 raise WorkflowValidationError(f"Step {step.id} cannot depend on itself")
+        for ref in step.input_refs:
+            if _looks_like_evidence(ref):
+                raise WorkflowValidationError(
+                    f"Step {step.id} must not use evidence ID {ref} as input_ref"
+                )
+            if ref not in known_refs:
+                raise WorkflowValidationError(
+                    f"Step {step.id} references unknown input {ref}"
+                )
         if require_ai_evidence and step.requires_ai and not step.evidence_ids:
             raise WorkflowValidationError(
                 f"AI step {step.id} requires at least one evidence reference"
@@ -86,16 +107,35 @@ def validate_workflow_ir(workflow: WorkflowIR) -> None:
         targets = {
             decision.true_step_id,
             decision.false_step_id,
-            *(
-                [decision.source_step_id]
-                if decision.source_step_id
-                else []
-            ),
+            *([decision.source_step_id] if decision.source_step_id else []),
         }
         if not targets <= step_ids:
             raise WorkflowValidationError(
                 f"Decision {decision.id} references unknown steps"
             )
+        if decision.source_step_id:
+            true_edges = [
+                edge
+                for edge in workflow.edges
+                if edge.source_step_id == decision.source_step_id and edge.kind == "true"
+            ]
+            false_edges = [
+                edge
+                for edge in workflow.edges
+                if edge.source_step_id == decision.source_step_id and edge.kind == "false"
+            ]
+            if true_edges and any(
+                edge.target_step_id != decision.true_step_id for edge in true_edges
+            ):
+                raise WorkflowValidationError(
+                    f"Decision {decision.id} true target is inconsistent with true edges"
+                )
+            if false_edges and any(
+                edge.target_step_id != decision.false_step_id for edge in false_edges
+            ):
+                raise WorkflowValidationError(
+                    f"Decision {decision.id} false target is inconsistent with false edges"
+                )
 
     for approval in workflow.approvals:
         if approval.step_id not in step_ids:
@@ -136,13 +176,18 @@ def validate_workflow_ir(workflow: WorkflowIR) -> None:
     if not reachable:
         raise WorkflowValidationError("No steps are reachable from an input step")
 
+    unreachable_active = sorted(active_steps - reachable)
+    if unreachable_active:
+        raise WorkflowValidationError(
+            "Unreachable non-accidental steps: " + ", ".join(unreachable_active)
+        )
+
     terminal = {
         step.id
         for step in workflow.steps
         if step.id in reachable and not adjacency.get(step.id)
     }
     if not terminal:
-        # Also treat approval/human_review/draft as terminals even with no outbound edges.
         terminal = {
             step.id
             for step in workflow.steps

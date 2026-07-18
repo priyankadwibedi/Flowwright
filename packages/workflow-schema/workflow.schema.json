@@ -1,5 +1,20 @@
 {
   "$defs": {
+    "InvoiceStepRole": {
+      "description": "Canonical invoice-compiler roles independent of UI step display names.",
+      "enum": [
+        "invoice_input",
+        "extract_fields",
+        "lookup_purchase_order",
+        "validate_required_fields",
+        "compare_amounts",
+        "approval",
+        "exception",
+        "human_review"
+      ],
+      "title": "InvoiceStepRole",
+      "type": "string"
+    },
     "WorkflowApproval": {
       "additionalProperties": false,
       "properties": {
@@ -35,7 +50,13 @@
           "type": "array"
         }
       },
-      "required": ["id", "name", "description", "trigger", "step_id"],
+      "required": [
+        "id",
+        "name",
+        "description",
+        "trigger",
+        "step_id"
+      ],
       "title": "WorkflowApproval",
       "type": "object"
     },
@@ -128,7 +149,14 @@
           "type": "string"
         },
         "kind": {
-          "enum": ["success", "failure", "true", "false", "review", "approval"],
+          "enum": [
+            "success",
+            "failure",
+            "true",
+            "false",
+            "review",
+            "approval"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -150,7 +178,13 @@
           "type": "string"
         }
       },
-      "required": ["id", "source_step_id", "target_step_id", "kind", "label"],
+      "required": [
+        "id",
+        "source_step_id",
+        "target_step_id",
+        "kind",
+        "label"
+      ],
       "title": "WorkflowEdge",
       "type": "object"
     },
@@ -191,7 +225,13 @@
           "title": "Example"
         }
       },
-      "required": ["id", "name", "description", "data_type", "required"],
+      "required": [
+        "id",
+        "name",
+        "description",
+        "data_type",
+        "required"
+      ],
       "title": "WorkflowInput",
       "type": "object"
     },
@@ -274,6 +314,22 @@
           },
           "title": "Evidence Ids",
           "type": "array"
+        },
+        "accidental": {
+          "default": false,
+          "title": "Accidental",
+          "type": "boolean"
+        },
+        "semantic_role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InvoiceStepRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -329,7 +385,12 @@
         },
         "status": {
           "default": "pending",
-          "enum": ["pending", "passed", "failed", "human_review"],
+          "enum": [
+            "pending",
+            "passed",
+            "failed",
+            "human_review"
+          ],
           "title": "Status",
           "type": "string"
         },
@@ -339,7 +400,12 @@
           "type": "string"
         }
       },
-      "required": ["id", "name", "input_case", "expected_outcome"],
+      "required": [
+        "id",
+        "name",
+        "input_case",
+        "expected_outcome"
+      ],
       "title": "WorkflowTest",
       "type": "object"
     },
@@ -371,9 +437,42 @@
         "required": {
           "title": "Required",
           "type": "boolean"
+        },
+        "answer_type": {
+          "default": "single_select",
+          "enum": [
+            "boolean",
+            "single_select",
+            "short_text"
+          ],
+          "title": "Answer Type",
+          "type": "string"
+        },
+        "allowed_options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Options",
+          "type": "array"
+        },
+        "resolution_target": {
+          "default": "",
+          "title": "Resolution Target",
+          "type": "string"
+        },
+        "resolved": {
+          "default": false,
+          "title": "Resolved",
+          "type": "boolean"
         }
       },
-      "required": ["id", "question", "reason", "affected_step_ids", "required"],
+      "required": [
+        "id",
+        "question",
+        "reason",
+        "affected_step_ids",
+        "required"
+      ],
       "title": "WorkflowUncertainty",
       "type": "object"
     },
@@ -460,6 +559,27 @@
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
       "title": "Version",
       "type": "string"
+    },
+    "workflow_kind": {
+      "default": "unsupported",
+      "enum": [
+        "invoice_approval",
+        "unsupported"
+      ],
+      "title": "Workflow Kind",
+      "type": "string"
+    },
+    "demonstration_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Demonstration Id"
     },
     "inputs": {
       "items": {

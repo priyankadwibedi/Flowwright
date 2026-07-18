@@ -8,10 +8,10 @@ import {
   API_URL,
   apiUnavailableMessage,
 } from "../../../lib/config";
-import { sampleWorkflow } from "../../../lib/sampleWorkflow";
 import {
   canCompileWorkflow,
-  saveSampleWorkflow,
+  loadInferredWorkflow,
+  saveInferredWorkflow,
   unresolvedRequiredClarifications,
   type CompileReadiness,
 } from "../../../lib/workflowSession";
@@ -26,6 +26,8 @@ import { routes } from "../../../lib/routes";
 import { WorkflowCanvas } from "../../../components/workflow/WorkflowCanvas";
 import { WorkflowInspector } from "../../../components/workflow/WorkflowInspector";
 import { WorkflowLegend } from "../../../components/workflow/WorkflowLegend";
+import { loadEvidenceCollection } from "../../../lib/evidenceStore";
+import type { ProcessedDemonstration } from "../../../lib/validation";
 
 async function describeApiError(
   response: Response,
@@ -42,17 +44,18 @@ async function describeApiError(
   return `${fallback} (${response.status})`;
 }
 
-export default function DemoWorkflowPage() {
+export default function InferredWorkflowPage() {
   const [workflow, setWorkflow] = useState<WorkflowIR | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [usingStaticSample, setUsingStaticSample] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [uncertaintyMessage, setUncertaintyMessage] = useState<string | null>(
     null,
   );
+  const [evidence, setEvidence] = useState<ProcessedDemonstration | null>(null);
   const [readiness, setReadiness] = useState<CompileReadiness | null>(null);
   const [correctionStatus, setCorrectionStatus] = useState<string | null>(null);
   const [correcting, setCorrecting] = useState(false);
+  const [missing, setMissing] = useState(false);
 
   async function refreshReadiness(next: WorkflowIR) {
     const result = await fetchCompileReadiness(next);
@@ -60,35 +63,20 @@ export default function DemoWorkflowPage() {
   }
 
   useEffect(() => {
-    // Sample route always loads the deterministic sample — never inferred state.
-    if (!API_CONFIGURED || !API_URL) {
-      saveSampleWorkflow(sampleWorkflow);
-      setWorkflow(sampleWorkflow);
-      setSelectedId(sampleWorkflow.steps[0]?.id ?? null);
-      setUsingStaticSample(true);
-      void refreshReadiness(sampleWorkflow);
+    const existing = loadInferredWorkflow();
+    if (!existing) {
+      setMissing(true);
       return;
     }
-
-    fetch(`${API_URL}/api/v1/workflows/demo`)
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error(`Workflow request failed (${response.status})`);
-        return workflowIRSchema.parse(await response.json());
-      })
-      .then((value) => {
-        saveSampleWorkflow(value);
-        setWorkflow(value);
-        setSelectedId(value.steps[0]?.id ?? null);
-        void refreshReadiness(value);
-      })
-      .catch(() => {
-        saveSampleWorkflow(sampleWorkflow);
-        setWorkflow(sampleWorkflow);
-        setSelectedId(sampleWorkflow.steps[0]?.id ?? null);
-        setUsingStaticSample(true);
-        void refreshReadiness(sampleWorkflow);
-      });
+    setWorkflow(existing.workflow);
+    setSelectedId(existing.workflow.steps[0]?.id ?? null);
+    void refreshReadiness(existing.workflow);
+    const demoId =
+      existing.workflow.demonstration_id ||
+      window.sessionStorage.getItem("flowwright.demonstration_id");
+    if (demoId) {
+      void loadEvidenceCollection(demoId).then(setEvidence);
+    }
   }, []);
 
   const selectedStep = useMemo(
@@ -101,9 +89,7 @@ export default function DemoWorkflowPage() {
   );
   const remainingOptional = useMemo(
     () =>
-      workflow?.uncertainties.filter(
-        (item) => !item.required || item.resolved,
-      ).filter((item) => !item.required) ?? [],
+      workflow?.uncertainties.filter((item) => !item.required) ?? [],
     [workflow],
   );
   const isInvoice = workflow?.workflow_kind === "invoice_approval";
@@ -114,7 +100,7 @@ export default function DemoWorkflowPage() {
   );
 
   function persistWorkflow(next: WorkflowIR) {
-    saveSampleWorkflow(next);
+    saveInferredWorkflow(next);
     setWorkflow(next);
     void refreshReadiness(next);
   }
@@ -208,41 +194,68 @@ export default function DemoWorkflowPage() {
     }
   }
 
-  const compileBlockedReason = !isInvoice
-    ? "Compilation unavailable for unsupported workflows."
-    : remainingRequired.length > 0
-      ? `Resolve ${remainingRequired.length} required clarification${remainingRequired.length === 1 ? "" : "s"} before generating software.`
-      : readiness && !readiness.ready
-        ? readiness.blockers[0]?.message ??
-          "The sample workflow is not ready to compile."
-        : !API_CONFIGURED || !API_URL
-          ? apiUnavailableMessage()
-          : null;
+  const compileBlockedReason = !workflow
+    ? null
+    : !isInvoice
+      ? "Compilation unavailable for unsupported workflows."
+      : remainingRequired.length > 0
+        ? `Resolve ${remainingRequired.length} required clarification${remainingRequired.length === 1 ? "" : "s"} before generating software.`
+        : readiness && !readiness.ready
+          ? readiness.blockers[0]?.message ??
+            "The inferred workflow does not yet contain a valid exception path."
+          : !API_CONFIGURED || !API_URL
+            ? apiUnavailableMessage()
+            : null;
+
+  if (missing) {
+    return (
+      <main className="marketing-page">
+        <AnnouncementBar />
+        <MarketingHeader />
+        <section className="workflow-page content-width">
+          <BackLink href={routes.record} label="Back to recording" />
+          <div className="eyebrow">AI-INFERRED WORKFLOW / INVOICE APPROVAL</div>
+          <h1>Review the workflow Flowwright inferred.</h1>
+          <p>
+            No inferred workflow is available. Record and analyze a
+            demonstration first.
+          </p>
+          <div className="workflow-actions">
+            <Link className="button button-amber" href={routes.record}>
+              Back to recording
+            </Link>
+            <Link className="button button-outline" href={routes.demo}>
+              Open sample invoice workflow
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="marketing-page">
       <AnnouncementBar />
       <MarketingHeader />
       <section className="workflow-page content-width">
-        <BackLink href={routes.home} label="Back to home" />
+        <BackLink href={routes.record} label="Back to recording" />
         <div className="workflow-heading">
           <div>
-            <div className="eyebrow">SAMPLE WORKFLOW / INVOICE APPROVAL</div>
-            <h1>Explore the sample invoice workflow.</h1>
+            <div className="eyebrow">AI-INFERRED WORKFLOW / INVOICE APPROVAL</div>
+            <h1>Review the workflow Flowwright inferred.</h1>
             <p>
-              This deterministic example demonstrates Flowwright’s compiler,
-              generated code, mandatory tests, and approval boundary without
-              requiring AI inference.
+              {workflow
+                ? `${workflow.name}${workflow.description ? ` — ${workflow.description}` : ""}`
+                : "Validating the workflow contract before rendering the graph."}
             </p>
           </div>
-        </div>
-        {usingStaticSample && (
-          <div className="notice">
-            The live backend is unavailable. You are viewing the static sample
-            workflow. AI analysis remains disabled until a backend is
-            configured.
+          <div className="workflow-confidence">
+            <span className="mono-label">Confidence</span>
+            <strong>
+              {workflow ? `${Math.round(workflow.confidence * 100)}%` : "—"}
+            </strong>
           </div>
-        )}
+        </div>
         {!isInvoice && workflow && (
           <div className="notice notice-error">
             This workflow is marked <code>unsupported</code> for compilation.
@@ -259,7 +272,7 @@ export default function DemoWorkflowPage() {
               </div>
               <div>
                 <span className="mono-label">Origin</span>
-                <strong>Deterministic sample</strong>
+                <strong>AI inferred</strong>
               </div>
               <div>
                 <span className="mono-label">Required approvals</span>
@@ -280,7 +293,7 @@ export default function DemoWorkflowPage() {
               <div>
                 <WorkflowCanvas
                   workflow={workflow}
-                  origin="sample"
+                  origin="ai_inferred"
                   selectedStepId={selectedId}
                   onSelectStep={setSelectedId}
                 />
@@ -289,8 +302,8 @@ export default function DemoWorkflowPage() {
                 <WorkflowInspector
                   workflow={workflow}
                   step={selectedStep}
-                  evidence={null}
-                  origin="sample"
+                  evidence={evidence}
+                  origin="ai_inferred"
                   correcting={correcting}
                   onCorrect={applyCorrection}
                 />
@@ -336,6 +349,9 @@ export default function DemoWorkflowPage() {
                       <span className="mono-label">Required</span>
                       <h2>{uncertainty.question}</h2>
                       <p>{uncertainty.reason}</p>
+                      <p className="mono-label">
+                        Options: {options.join(", ")}
+                      </p>
                       <div className="button-row">
                         <select
                           aria-label={`Answer for ${uncertainty.id}`}
@@ -413,11 +429,21 @@ export default function DemoWorkflowPage() {
                 {uncertaintyMessage}
               </p>
             )}
+            {readiness && !readiness.ready && remainingRequired.length === 0 && (
+              <div className="notice notice-error">
+                <p>This workflow is not ready to compile.</p>
+                <ul>
+                  {readiness.blockers.map((blocker) => (
+                    <li key={blocker.code}>{blocker.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="workflow-actions">
               {canCompile ? (
                 <Link
                   className="button button-amber"
-                  href={withWorkflowSource(routes.code, "sample")}
+                  href={withWorkflowSource(routes.code, "inferred")}
                 >
                   Generate and inspect code
                 </Link>
@@ -429,7 +455,7 @@ export default function DemoWorkflowPage() {
               {canCompile ? (
                 <Link
                   className="button button-outline"
-                  href={withWorkflowSource(routes.tests, "sample")}
+                  href={withWorkflowSource(routes.tests, "inferred")}
                 >
                   Run mandatory tests
                 </Link>
@@ -441,7 +467,7 @@ export default function DemoWorkflowPage() {
               {canCompile ? (
                 <Link
                   className="button button-outline"
-                  href={withWorkflowSource(routes.generatedInvoice, "sample")}
+                  href={withWorkflowSource(routes.generatedInvoice, "inferred")}
                 >
                   Open invoice processor
                 </Link>
@@ -450,6 +476,9 @@ export default function DemoWorkflowPage() {
                   Open invoice processor
                 </button>
               )}
+              <Link className="button button-outline" href={routes.demo}>
+                Open sample invoice workflow
+              </Link>
             </div>
             {compileBlockedReason && (
               <p className="action-prerequisite">{compileBlockedReason}</p>

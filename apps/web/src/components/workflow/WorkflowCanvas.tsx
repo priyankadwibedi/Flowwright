@@ -13,26 +13,102 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import type { WorkflowIR } from "@flowwright/workflow-schema";
+import type { WorkflowOrigin } from "../../lib/workflowSession";
 import { WorkflowNode } from "./WorkflowNode";
+
+const COLUMN_GAP = 280;
+const ROW_GAP = 190;
+
+function dependencyLevels(workflow: WorkflowIR): Map<string, number> {
+  const levels = new Map<string, number>();
+  const incoming = new Map<string, string[]>();
+  for (const step of workflow.steps) {
+    incoming.set(step.id, [...step.depends_on]);
+  }
+  for (const edge of workflow.edges) {
+    const current = incoming.get(edge.target_step_id) ?? [];
+    if (!current.includes(edge.source_step_id)) {
+      current.push(edge.source_step_id);
+      incoming.set(edge.target_step_id, current);
+    }
+  }
+
+  const visiting = new Set<string>();
+  const visit = (id: string): number => {
+    if (levels.has(id)) return levels.get(id)!;
+    if (visiting.has(id)) return 0;
+    visiting.add(id);
+    const parents = incoming.get(id) ?? [];
+    const level =
+      parents.length === 0
+        ? 0
+        : Math.max(...parents.map((parent) => visit(parent))) + 1;
+    visiting.delete(id);
+    levels.set(id, level);
+    return level;
+  };
+
+  for (const step of workflow.steps) {
+    visit(step.id);
+  }
+  return levels;
+}
+
+function laneForStep(type: string, id: string): number {
+  const lower = id.toLowerCase();
+  if (type === "human_review" || lower.includes("human")) return 0;
+  if (type === "approval" || lower.includes("approv")) return 1;
+  if (type === "draft" || lower.includes("exception")) return 2;
+  if (type === "condition") return 1;
+  if (type === "input") return 1;
+  return 1;
+}
 
 function buildNodes(
   workflow: WorkflowIR,
-  selectedStepId?: string | null,
+  selectedStepId: string | null | undefined,
+  origin: WorkflowOrigin,
 ): Node[] {
-  return workflow.steps.map((step, index) => ({
-    id: step.id,
-    data: {
-      label: step.name,
-      type: step.type,
-      description: step.description,
-      selected: step.id === selectedStepId,
-      confidence: step.confidence,
-      evidenceIds: step.evidence_ids,
-    },
-    position: { x: (index % 3) * 280, y: Math.floor(index / 3) * 200 },
-    type: "workflow",
-    draggable: true,
-  }));
+  const levels = dependencyLevels(workflow);
+  const buckets = new Map<string, typeof workflow.steps>();
+  for (const step of workflow.steps) {
+    const level = levels.get(step.id) ?? 0;
+    const lane = laneForStep(step.type, step.id);
+    const key = `${level}:${lane}`;
+    const bucket = buckets.get(key) ?? [];
+    bucket.push(step);
+    buckets.set(key, bucket);
+  }
+
+  return workflow.steps.map((step) => {
+    const level = levels.get(step.id) ?? 0;
+    const lane = laneForStep(step.type, step.id);
+    const siblings = buckets.get(`${level}:${lane}`) ?? [step];
+    const index = siblings.findIndex((item) => item.id === step.id);
+    const offset = (index - (siblings.length - 1) / 2) * 36;
+    return {
+      id: step.id,
+      data: {
+        label: step.name,
+        type: step.type,
+        description: step.description,
+        selected: step.id === selectedStepId,
+        confidence: step.confidence,
+        evidenceIds: step.evidence_ids,
+        origin,
+        observed:
+          origin === "ai_inferred" &&
+          step.evidence_ids.length > 0 &&
+          !step.requires_ai,
+      },
+      position: {
+        x: lane * COLUMN_GAP + offset,
+        y: level * ROW_GAP,
+      },
+      type: "workflow",
+      draggable: true,
+    };
+  });
 }
 
 function buildEdges(workflow: WorkflowIR): Edge[] {
@@ -60,7 +136,8 @@ function buildEdges(workflow: WorkflowIR): Edge[] {
         fontSize: 10,
         fontFamily: "var(--font-geist-mono), monospace",
       },
-      labelBgStyle: { fill: "#f1f0e9", fillOpacity: 0.9 },
+      labelBgStyle: { fill: "#f1f0e9", fillOpacity: 0.92 },
+      labelBgPadding: [4, 6] as [number, number],
     }));
   }
   return workflow.steps.flatMap((step) =>
@@ -73,26 +150,28 @@ function buildEdges(workflow: WorkflowIR): Edge[] {
   );
 }
 
-function workflowLayoutKey(workflow: WorkflowIR): string {
-  return `${workflow.id}:${workflow.steps.map((step) => step.id).join(",")}`;
+function workflowLayoutKey(workflow: WorkflowIR, origin: WorkflowOrigin): string {
+  return `${workflow.id}:${origin}:${workflow.steps.map((step) => step.id).join(",")}`;
 }
 
 export function WorkflowCanvas({
   workflow,
   selectedStepId,
   onSelectStep,
+  origin = "sample",
 }: {
   workflow: WorkflowIR | null;
   selectedStepId?: string | null;
   onSelectStep?: (id: string) => void;
+  origin?: WorkflowOrigin;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const layoutKeyRef = useRef<string | null>(null);
 
   const layoutKey = useMemo(
-    () => (workflow ? workflowLayoutKey(workflow) : null),
-    [workflow],
+    () => (workflow ? workflowLayoutKey(workflow, origin) : null),
+    [workflow, origin],
   );
 
   useEffect(() => {
@@ -105,7 +184,7 @@ export function WorkflowCanvas({
 
     if (layoutKeyRef.current !== layoutKey) {
       layoutKeyRef.current = layoutKey;
-      setNodes(buildNodes(workflow, selectedStepId));
+      setNodes(buildNodes(workflow, selectedStepId, origin));
       setEdges(buildEdges(workflow));
       return;
     }
@@ -124,11 +203,16 @@ export function WorkflowCanvas({
             selected: step.id === selectedStepId,
             confidence: step.confidence,
             evidenceIds: step.evidence_ids,
+            origin,
+            observed:
+              origin === "ai_inferred" &&
+              step.evidence_ids.length > 0 &&
+              !step.requires_ai,
           },
         };
       }),
     );
-  }, [workflow, layoutKey, selectedStepId, setNodes, setEdges]);
+  }, [workflow, layoutKey, selectedStepId, origin, setNodes, setEdges]);
 
   const handleNodeClick: NodeMouseHandler = (_, node) =>
     onSelectStep?.(node.id);

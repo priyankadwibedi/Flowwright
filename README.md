@@ -24,7 +24,7 @@ Only `workflow_kind=invoice_approval` may proceed to generation, tests, and the 
 - Next.js dashboard with `/`, `/record`, `/workflows/demo`, `/tests`, `/code`, and `/generated/invoice-processor`.
 - Screen capture plus separate microphone capture, merged into one recording, with screen-audio and microphone status.
 - Evidence processing: JPEG key frames, optional transcript (model-aware), browser events, IndexedDB evidence storage, provenance on workflow nodes.
-- FastAPI health, sample workflow, OpenAI analysis (when configured), clarifications, compiler config extraction, trusted artifact generation, isolated artifact pytest execution, and invoice mini-app endpoints.
+- FastAPI health, sample workflow, OpenAI analysis (when configured), clarifications, compiler config extraction, trusted artifact generation, and invoice mini-app endpoints. Generated tests run in a temporary working directory with a scrubbed environment and timeout. Network isolation is not currently implemented.
 - Pydantic WorkflowIR + Zod schema, `Decimal` monetary comparisons, synthetic invoice fixtures.
 - Chrome MV3 extension with service-worker session ownership (`chrome.storage.session`), SPA navigation capture, sensitive-field omission, and optional host permissions.
 - GitHub Pages static export. Live API calls require `FLOWWRIGHT_API_URL` / `NEXT_PUBLIC_FLOWWRIGHT_API_URL`.
@@ -33,7 +33,7 @@ Only `workflow_kind=invoice_approval` may proceed to generation, tests, and the 
 ### Prototype limitations
 
 - Invoice-focused compiler only; other demonstrated workflows are `unsupported` for generation.
-- Approvals are synthetic in-memory records for the demo, not a durable database.
+- Approvals produce a synthetic, non-persistent receipt. No external action or durable record is created.
 - Media is uploaded only after consent on **Process evidence**; temporary processing files exist for the request lifetime. This is not a zero-retention guarantee.
 - No authentication, teams, billing, marketplaces, Gmail/Slack/payment integrations, or desktop automation.
 - OpenAI-backed end-to-end inference requires a configured key and is environment-dependent.
@@ -121,7 +121,7 @@ Allowlisted fixtures: exact match → `approval_required`, amount mismatch → `
 
 ## Testing and security
 
-See `SECURITY.md`. Public API usage is rate-limited and size-bounded. Do not claim media always stays local after **Process evidence**.
+See `SECURITY.md`. Public API usage is rate-limited and size-bounded. Do not claim media always stays local after **Process evidence**. Generated tests run in a temporary working directory with a scrubbed environment and timeout. Network isolation is not currently implemented.
 
 ## Deployment
 

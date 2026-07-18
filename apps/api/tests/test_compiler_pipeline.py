@@ -24,9 +24,187 @@ def _demo():
     return DemoWorkflowAnalyzer().analyze("invoice approval")
 
 
-def test_workflow_kind_present_on_demo():
-    workflow = _demo()
-    assert workflow.workflow_kind == "invoice_approval"
+def test_ai_inferred_graph_without_review_compiles():
+    """AI demos often omit human_review; compiler should synthesize it."""
+    from datetime import UTC, datetime
+
+    from app.models.workflow import (
+        WorkflowApproval,
+        WorkflowDecision,
+        WorkflowEdge,
+        WorkflowInput,
+        WorkflowIR,
+        WorkflowStep,
+    )
+    from app.services.invoice_compiler import extract_invoice_compiler_config
+
+    steps = [
+        WorkflowStep(
+            id="receive-invoice",
+            name="Receive",
+            type="input",
+            description="upload",
+            depends_on=[],
+            input_refs=["invoice_document"],
+            output_refs=[],
+            configuration={},
+            requires_ai=False,
+            requires_approval=False,
+            confidence=1.0,
+            evidence_ids=[],
+        ),
+        WorkflowStep(
+            id="extract",
+            name="Extract",
+            type="ai_extract",
+            description="extract",
+            depends_on=["receive-invoice"],
+            input_refs=["invoice_document"],
+            output_refs=["fields"],
+            configuration={},
+            requires_ai=True,
+            requires_approval=False,
+            confidence=0.9,
+            evidence_ids=[],
+        ),
+        WorkflowStep(
+            id="lookup",
+            name="Lookup",
+            type="lookup",
+            description="lookup",
+            depends_on=["extract"],
+            input_refs=["fields"],
+            output_refs=["po"],
+            configuration={},
+            requires_ai=False,
+            requires_approval=False,
+            confidence=0.9,
+            evidence_ids=[],
+        ),
+        WorkflowStep(
+            id="compare_totals",
+            name="Compare totals",
+            type="condition",
+            description="compare amount total",
+            depends_on=["lookup"],
+            input_refs=["fields", "po"],
+            output_refs=["match"],
+            configuration={"tolerance": 0},
+            requires_ai=False,
+            requires_approval=False,
+            confidence=0.9,
+            evidence_ids=[],
+        ),
+        WorkflowStep(
+            id="approve",
+            name="Approve",
+            type="approval",
+            description="approve",
+            depends_on=["compare_totals"],
+            input_refs=["match"],
+            output_refs=["approval"],
+            configuration={},
+            requires_ai=False,
+            requires_approval=True,
+            confidence=0.9,
+            evidence_ids=[],
+        ),
+        WorkflowStep(
+            id="flag_exception",
+            name="Exception",
+            type="draft",
+            description="exception",
+            depends_on=["compare_totals"],
+            input_refs=["fields"],
+            output_refs=["exception"],
+            configuration={"delivery": "draft"},
+            requires_ai=False,
+            requires_approval=False,
+            confidence=0.9,
+            evidence_ids=[],
+        ),
+    ]
+    workflow = WorkflowIR(
+        id="ai-invoice",
+        name="AI invoice",
+        description="inferred",
+        version="0.1.0",
+        workflow_kind="invoice_approval",
+        inputs=[
+            WorkflowInput(
+                id="invoice_document",
+                name="Invoice",
+                description="doc",
+                data_type="document",
+                required=True,
+            )
+        ],
+        variables=[],
+        steps=steps,
+        decisions=[
+            WorkflowDecision(
+                id="match",
+                name="Match",
+                description="totals",
+                condition="totals match",
+                true_step_id="approve",
+                false_step_id="flag_exception",
+                source_step_id="compare_totals",
+            )
+        ],
+        approvals=[
+            WorkflowApproval(
+                id="gate",
+                name="Gate",
+                description="gate",
+                trigger="approve",
+                step_id="approve",
+            )
+        ],
+        edges=[
+            WorkflowEdge(
+                id="e1",
+                source_step_id="receive-invoice",
+                target_step_id="extract",
+                kind="success",
+                label="next",
+            ),
+            WorkflowEdge(
+                id="e2",
+                source_step_id="extract",
+                target_step_id="lookup",
+                kind="success",
+                label="next",
+            ),
+            WorkflowEdge(
+                id="e3",
+                source_step_id="lookup",
+                target_step_id="compare_totals",
+                kind="success",
+                label="next",
+            ),
+            WorkflowEdge(
+                id="e4",
+                source_step_id="compare_totals",
+                target_step_id="approve",
+                kind="true",
+                label="true",
+            ),
+            WorkflowEdge(
+                id="e5",
+                source_step_id="compare_totals",
+                target_step_id="flag_exception",
+                kind="false",
+                label="false",
+            ),
+        ],
+        tests=[],
+        confidence=0.9,
+        created_at=datetime.now(UTC),
+    )
+    config = extract_invoice_compiler_config(workflow)
+    assert config.matching_action == "approval_required"
+
 
 
 def test_compiler_config_from_demo():

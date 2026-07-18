@@ -12,6 +12,17 @@ export const stepTypeSchema = z.enum([
   "human_review",
 ]);
 
+export const invoiceStepRoleSchema = z.enum([
+  "invoice_input",
+  "extract_fields",
+  "lookup_purchase_order",
+  "validate_required_fields",
+  "compare_amounts",
+  "approval",
+  "exception",
+  "human_review",
+]);
+
 export const workflowKindSchema = z.enum(["invoice_approval", "unsupported"]);
 
 export const workflowInputSchema = z.object({
@@ -49,6 +60,7 @@ export const workflowStepSchema = z.object({
   confidence: z.number().min(0).max(1).default(0),
   evidence_ids: z.array(z.string()).default([]),
   accidental: z.boolean().default(false),
+  semantic_role: invoiceStepRoleSchema.nullable().optional(),
 });
 
 export const workflowDecisionSchema = z.object({
@@ -90,6 +102,7 @@ export const workflowUncertaintySchema = z.object({
   answer_type: z.enum(["boolean", "single_select", "short_text"]).default("single_select"),
   allowed_options: z.array(z.string()).default([]),
   resolution_target: z.string().default(""),
+  resolved: z.boolean().default(false),
 });
 
 export const workflowTestSchema = z.object({

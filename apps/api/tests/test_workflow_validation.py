@@ -74,3 +74,38 @@ def test_ai_step_requires_evidence_when_demonstration_present():
     ]
     with pytest.raises(WorkflowValidationError, match="evidence"):
         validate_workflow_ir(workflow.model_copy(update={"steps": steps}))
+
+
+def test_unreachable_non_accidental_step_rejected():
+    workflow = _demo()
+    orphan = workflow.steps[0].model_copy(
+        update={
+            "id": "orphan_step",
+            "name": "Orphan step",
+            "type": "transform",
+            "depends_on": [],
+            "accidental": False,
+            "requires_approval": False,
+        }
+    )
+    with pytest.raises(WorkflowValidationError, match="Unreachable"):
+        validate_workflow_ir(
+            workflow.model_copy(update={"steps": [*workflow.steps, orphan]})
+        )
+
+
+def test_unreachable_accidental_step_is_allowed():
+    workflow = _demo()
+    orphan = workflow.steps[0].model_copy(
+        update={
+            "id": "orphan_accidental",
+            "name": "Accidental orphan",
+            "type": "transform",
+            "depends_on": [],
+            "accidental": True,
+            "requires_approval": False,
+        }
+    )
+    validate_workflow_ir(
+        workflow.model_copy(update={"steps": [*workflow.steps, orphan]})
+    )

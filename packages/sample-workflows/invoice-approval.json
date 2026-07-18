@@ -87,21 +87,33 @@
       "type": "input",
       "description": "Accept a synthetic invoice document for analysis.",
       "depends_on": [],
-      "input_refs": ["invoice_document"],
-      "output_refs": ["stored_invoice"],
+      "input_refs": [
+        "invoice_document"
+      ],
+      "output_refs": [
+        "stored_invoice"
+      ],
       "configuration": {
-        "accepted_formats": ["application/json", "application/pdf"]
+        "accepted_formats": [
+          "application/json",
+          "application/pdf"
+        ]
       },
       "requires_ai": false,
-      "requires_approval": false
+      "requires_approval": false,
+      "semantic_role": "invoice_input"
     },
     {
       "id": "extract_fields",
       "name": "AI field extraction",
       "type": "ai_extract",
       "description": "Extract supplier, invoice number, purchase order, date, total, and currency with uncertainty retained.",
-      "depends_on": ["invoice_upload"],
-      "input_refs": ["stored_invoice"],
+      "depends_on": [
+        "invoice_upload"
+      ],
+      "input_refs": [
+        "stored_invoice"
+      ],
       "output_refs": [
         "supplier",
         "invoice_number",
@@ -120,72 +132,125 @@
         "minimum_confidence": 0.85
       },
       "requires_ai": true,
-      "requires_approval": false
+      "requires_approval": false,
+      "semantic_role": "extract_fields"
     },
     {
       "id": "lookup_po",
       "name": "Purchase-order lookup",
       "type": "lookup",
       "description": "Look up the purchase-order record using the extracted reference.",
-      "depends_on": ["extract_fields"],
-      "input_refs": ["purchase_order"],
-      "output_refs": ["purchase_order_record", "po_total"],
+      "depends_on": [
+        "extract_fields"
+      ],
+      "input_refs": [
+        "purchase_order"
+      ],
+      "output_refs": [
+        "purchase_order_record",
+        "po_total"
+      ],
       "configuration": {
         "source": "synthetic_purchase_orders",
         "match": "exact"
       },
       "requires_ai": false,
-      "requires_approval": false
+      "requires_approval": false,
+      "semantic_role": "lookup_purchase_order"
     },
     {
       "id": "compare_totals",
       "name": "Total comparison",
       "type": "condition",
       "description": "Compare invoice and purchase-order totals in the same currency.",
-      "depends_on": ["lookup_po"],
-      "input_refs": ["invoice_total", "po_total", "currency"],
-      "output_refs": ["totals_match"],
-      "configuration": { "operator": "equals", "tolerance": 0 },
+      "depends_on": [
+        "lookup_po"
+      ],
+      "input_refs": [
+        "invoice_total",
+        "po_total",
+        "currency"
+      ],
+      "output_refs": [
+        "totals_match"
+      ],
+      "configuration": {
+        "operator": "equals",
+        "tolerance": 0
+      },
       "requires_ai": false,
-      "requires_approval": false
+      "requires_approval": false,
+      "semantic_role": "compare_amounts"
     },
     {
       "id": "approve_invoice",
       "name": "Approval path",
       "type": "approval",
       "description": "Prepare the matching invoice for an explicit human approval action.",
-      "depends_on": ["compare_totals"],
-      "input_refs": ["totals_match"],
-      "output_refs": ["approval_record"],
-      "configuration": { "action": "approve", "automatic_execution": false },
+      "depends_on": [
+        "compare_totals"
+      ],
+      "input_refs": [
+        "totals_match"
+      ],
+      "output_refs": [
+        "approval_record"
+      ],
+      "configuration": {
+        "action": "approve",
+        "automatic_execution": false
+      },
       "requires_ai": false,
-      "requires_approval": true
+      "requires_approval": true,
+      "semantic_role": "approval"
     },
     {
       "id": "flag_exception",
       "name": "Exception path",
       "type": "draft",
       "description": "Draft an exception record when invoice and purchase-order totals differ.",
-      "depends_on": ["compare_totals"],
-      "input_refs": ["invoice_total", "po_total"],
-      "output_refs": ["exception_record"],
-      "configuration": { "reason": "amount_mismatch" },
+      "depends_on": [
+        "compare_totals"
+      ],
+      "input_refs": [
+        "invoice_total",
+        "po_total"
+      ],
+      "output_refs": [
+        "exception_record"
+      ],
+      "configuration": {
+        "reason": "amount_mismatch"
+      },
       "requires_ai": false,
-      "requires_approval": false
+      "requires_approval": false,
+      "semantic_role": "exception"
     },
     {
       "id": "human_review",
       "name": "Human-review path",
       "type": "human_review",
       "description": "Request review when required information is missing, unreadable, or uncertain.",
-      "depends_on": ["extract_fields"],
-      "input_refs": ["invoice_number", "purchase_order"],
-      "output_refs": ["review_request"],
+      "depends_on": [
+        "extract_fields"
+      ],
+      "input_refs": [
+        "invoice_number",
+        "purchase_order"
+      ],
+      "output_refs": [
+        "review_request"
+      ],
       "configuration": {
-        "reasons": ["missing_field", "low_confidence", "missing_purchase_order"]
+        "reasons": [
+          "missing_field",
+          "low_confidence",
+          "missing_purchase_order"
+        ]
       },
       "requires_ai": false,
-      "requires_approval": true
+      "requires_approval": true,
+      "semantic_role": "human_review"
     }
   ],
   "decisions": [
@@ -269,7 +334,7 @@
       "target_step_id": "approve_invoice",
       "kind": "approval",
       "condition": "invoice_total == po_total",
-      "label": "matches → approval"
+      "label": "matches \u2192 approval"
     },
     {
       "id": "compare-to-exception",
@@ -277,7 +342,7 @@
       "target_step_id": "flag_exception",
       "kind": "false",
       "condition": "invoice_total != po_total",
-      "label": "mismatch → exception"
+      "label": "mismatch \u2192 exception"
     }
   ],
   "uncertainties": [
@@ -285,10 +350,15 @@
       "id": "exception-delivery",
       "question": "Should an exception be saved as a draft or sent for review?",
       "reason": "The demonstration shows a flagged mismatch but does not establish a delivery channel.",
-      "affected_step_ids": ["flag_exception"],
+      "affected_step_ids": [
+        "flag_exception"
+      ],
       "required": false,
       "answer_type": "single_select",
-      "allowed_options": ["draft", "human_review"],
+      "allowed_options": [
+        "draft",
+        "human_review"
+      ],
       "resolution_target": "exception-delivery"
     }
   ],
@@ -296,7 +366,9 @@
     {
       "id": "exact_match",
       "name": "Matching invoice",
-      "input_case": { "invoice_file": "invoice-exact-match.json" },
+      "input_case": {
+        "invoice_file": "invoice-exact-match.json"
+      },
       "expected_outcome": "approval_required",
       "actual_outcome": "approval_required",
       "status": "passed",
@@ -305,7 +377,9 @@
     {
       "id": "amount_mismatch",
       "name": "Amount mismatch",
-      "input_case": { "invoice_file": "invoice-amount-mismatch.json" },
+      "input_case": {
+        "invoice_file": "invoice-amount-mismatch.json"
+      },
       "expected_outcome": "exception",
       "actual_outcome": "exception",
       "status": "passed",
@@ -314,7 +388,9 @@
     {
       "id": "missing_purchase_order",
       "name": "Missing purchase order",
-      "input_case": { "invoice_file": "invoice-missing-po.json" },
+      "input_case": {
+        "invoice_file": "invoice-missing-po.json"
+      },
       "expected_outcome": "human_review",
       "actual_outcome": "human_review",
       "status": "human_review",
@@ -323,7 +399,9 @@
     {
       "id": "unreadable_invoice_number",
       "name": "Unreadable invoice number",
-      "input_case": { "invoice_file": "invoice-unreadable-number.json" },
+      "input_case": {
+        "invoice_file": "invoice-unreadable-number.json"
+      },
       "expected_outcome": "human_review",
       "actual_outcome": "human_review",
       "status": "human_review",

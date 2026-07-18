@@ -5,62 +5,29 @@ import { MarketingHeader } from "../../components/marketing/MarketingHeader";
 import { BackLink } from "../../components/navigation/BackLink";
 import { externalLinks, routes } from "../../lib/routes";
 
-const pipelineStages = [
-  {
-    title: "Browser demonstration",
-    description:
-      "Screen recording, optional narration, and optional extension events capture what the human actually did.",
-  },
-  {
-    title: "Evidence processing",
-    description:
-      "Keyframes, transcript text, and browser events are normalized into a timestamped evidence timeline.",
-  },
-  {
-    title: "AI workflow inference",
-    description:
-      "Multimodal analysis proposes steps, variables, decisions, and uncertainties from untrusted evidence.",
-  },
-  {
-    title: "WorkflowDraft",
-    description:
-      "Structured model output maps actions to a draft schema with confidence and evidence references.",
-  },
-  {
-    title: "WorkflowIR validation",
-    description:
-      "Semantic graph validation rejects invalid edges, missing references, and contradictory structure.",
-  },
-  {
-    title: "Human clarification",
-    description:
-      "Required questions resolve compiler-critical ambiguity before generation proceeds.",
-  },
-  {
-    title: "Trusted compiler",
-    description:
-      "InvoiceCompilerConfig is extracted only from supported invoice_approval workflows.",
-  },
-  {
-    title: "Generated code",
-    description:
-      "Deterministic Python templates emit workflow.py and supporting artifacts — never arbitrary shell.",
-  },
-  {
-    title: "Mandatory tests",
-    description:
-      "Server-owned invoice cases always run; optional workflow tests are additive.",
-  },
-  {
-    title: "Generated application",
-    description:
-      "The invoice processor reuses the same compiler config as generated code and tests.",
-  },
+const compactPipeline = [
+  ["Capture", "Screen, narration, and browser events become evidence."],
+  ["Infer", "AI proposes a draft workflow from untrusted evidence."],
+  ["Validate", "WorkflowIR and clarifications harden the graph."],
+  ["Compile", "Trusted templates emit deterministic Python."],
+  ["Verify", "Mandatory tests and the invoice app reuse the same rules."],
+] as const;
+
+const detailedPipeline = [
+  "Browser demonstration",
+  "Evidence processing",
+  "AI workflow inference",
+  "WorkflowDraft",
+  "WorkflowIR validation",
+  "Human clarification",
+  "Trusted compiler",
+  "Generated code",
+  "Mandatory tests",
+  "Generated application",
 ] as const;
 
 const systemLayers = [
   {
-    id: "capture",
     title: "Capture layer",
     items: [
       "Browser screen recording",
@@ -71,7 +38,6 @@ const systemLayers = [
     ],
   },
   {
-    id: "intelligence",
     title: "Intelligence layer",
     items: [
       "Video-frame extraction",
@@ -83,7 +49,6 @@ const systemLayers = [
     ],
   },
   {
-    id: "compiler",
     title: "Compiler layer",
     items: [
       "Strict WorkflowDraft schema",
@@ -95,7 +60,6 @@ const systemLayers = [
     ],
   },
   {
-    id: "execution",
     title: "Execution layer",
     items: [
       "Generated workflow.py",
@@ -105,37 +69,6 @@ const systemLayers = [
       "Human approval boundaries",
       "Generated invoice application",
     ],
-  },
-] as const;
-
-const technologyGroups = [
-  {
-    label: "Frontend",
-    items: ["Next.js", "React", "TypeScript", "Tailwind CSS", "React Flow"],
-  },
-  {
-    label: "Backend",
-    items: ["Python", "FastAPI", "Pydantic", "OpenCV"],
-  },
-  {
-    label: "AI",
-    items: [
-      "OpenAI Responses API",
-      "Structured outputs",
-      "Transcription",
-    ],
-  },
-  {
-    label: "Execution",
-    items: [
-      "Trusted Python compiler templates",
-      "pytest",
-      "Synthetic invoice fixtures",
-    ],
-  },
-  {
-    label: "Infrastructure",
-    items: ["GitHub Pages", "Render", "GitHub Actions"],
   },
 ] as const;
 
@@ -159,33 +92,49 @@ export default function ArchitecturePage() {
 
         <section className="architecture-section" aria-labelledby="pipeline-heading">
           <h2 id="pipeline-heading">Architecture pipeline</h2>
-          <ol className="architecture-pipeline">
-            {pipelineStages.map((stage, index) => (
-              <li key={stage.title}>
-                <div className="architecture-pipeline-node">
-                  <span className="architecture-pipeline-index">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <h3>{stage.title}</h3>
-                    <p>{stage.description}</p>
-                  </div>
+          <ol className="architecture-compact-pipeline">
+            {compactPipeline.map(([title, description], index) => (
+              <li key={title}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
                 </div>
-                {index < pipelineStages.length - 1 && (
-                  <span className="architecture-pipeline-arrow" aria-hidden="true">
-                    ↓
-                  </span>
-                )}
               </li>
             ))}
           </ol>
+          <details className="architecture-details">
+            <summary>Show detailed ten-stage pipeline</summary>
+            <ol className="architecture-pipeline">
+              {detailedPipeline.map((stage, index) => (
+                <li key={stage}>
+                  <div className="architecture-pipeline-node">
+                    <span className="architecture-pipeline-index">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div>
+                      <h3>{stage}</h3>
+                    </div>
+                  </div>
+                  {index < detailedPipeline.length - 1 && (
+                    <span
+                      className="architecture-pipeline-arrow"
+                      aria-hidden="true"
+                    >
+                      ↓
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </details>
         </section>
 
         <section className="architecture-section" aria-labelledby="layers-heading">
           <h2 id="layers-heading">System layers</h2>
           <div className="architecture-layers">
             {systemLayers.map((layer) => (
-              <article key={layer.id} className="architecture-layer-card">
+              <article key={layer.title} className="architecture-layer-card">
                 <h3>{layer.title}</h3>
                 <ul>
                   {layer.items.map((item) => (
@@ -218,13 +167,25 @@ export default function ArchitecturePage() {
 
         <section className="architecture-section" aria-labelledby="stack-heading">
           <h2 id="stack-heading">Technology stack</h2>
-          <div className="architecture-stack">
-            {technologyGroups.map((group) => (
-              <article key={group.label}>
-                <h3>{group.label}</h3>
-                <p>{group.items.join(" · ")}</p>
-              </article>
-            ))}
+          <div className="architecture-stack compact">
+            <p>
+              <b>Frontend</b> Next.js · React · TypeScript · Tailwind CSS ·
+              React Flow
+            </p>
+            <p>
+              <b>Backend</b> Python · FastAPI · Pydantic · OpenCV
+            </p>
+            <p>
+              <b>AI</b> OpenAI Responses API · structured outputs ·
+              transcription
+            </p>
+            <p>
+              <b>Execution</b> Trusted Python templates · pytest · synthetic
+              fixtures
+            </p>
+            <p>
+              <b>Infrastructure</b> GitHub Pages · Render · GitHub Actions
+            </p>
           </div>
         </section>
 

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
+import { useEffect, useState } from "react";
+import type { WorkflowIR } from "@flowwright/workflow-schema";
 import { AnnouncementBar } from "../../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../../components/marketing/MarketingHeader";
 import { BackLink } from "../../../components/navigation/BackLink";
@@ -12,6 +12,11 @@ import {
   apiUnavailableMessage,
 } from "../../../lib/config";
 import { routes } from "../../../lib/routes";
+import {
+  loadWorkflowForSource,
+  readWorkflowSourceFromWindow,
+} from "../../../lib/workflowSource";
+import type { WorkflowSource } from "../../../lib/workflowSession";
 
 const cases = [
   ["invoice-exact-match.json", "Exact match"],
@@ -38,44 +43,26 @@ type ApprovalResponse = {
   message: string;
   approval_record_id: string;
   compiled_workflow_id: string;
-  compiler_hash: string;
+  compiler_fingerprint: string;
   decision: "approved";
-  timestamp: string;
+  recorded_at: string;
   protected_action_executed: false;
+  persistent: false;
+  external_action_executed: false;
+  payment_executed: false;
 };
 
 export default function GeneratedInvoiceProcessorPage() {
-  const workflowState = useMemo<
-    | { ok: true; workflow: WorkflowIR }
-    | { ok: false; error: string }
-  >(() => {
-    if (typeof window === "undefined") {
-      return { ok: false, error: "Workflow state is not available yet." };
-    }
-    const stored = window.sessionStorage.getItem("flowwright.workflow");
-    if (!stored) {
-      return {
-        ok: false,
-        error: "No workflow is loaded. Open an invoice workflow before running the generated application.",
-      };
-    }
-    try {
-      const workflow = workflowIRSchema.parse(JSON.parse(stored));
-      if (workflow.workflow_kind !== "invoice_approval") {
-        return {
-          ok: false,
-          error:
-            "Unsupported workflow kind. The invoice processor only runs invoice_approval workflows.",
-        };
+  const [workflowState, setWorkflowState] = useState<
+    | { status: "loading" }
+    | { status: "ready"; workflow: WorkflowIR; source: WorkflowSource }
+    | {
+        status: "error";
+        error: string;
+        blockers?: Array<{ code: string; message: string }>;
+        reviewHref: string;
       }
-      return { ok: true, workflow };
-    } catch {
-      return {
-        ok: false,
-        error: "Saved workflow state is corrupted. Re-open the workflow before running the generated application.",
-      };
-    }
-  }, []);
+  >({ status: "loading" });
   const [invoiceFile, setInvoiceFile] = useState<InvoiceCase>(cases[0][0]);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +70,43 @@ export default function GeneratedInvoiceProcessorPage() {
   const [approvalConfirmed, setApprovalConfirmed] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approval, setApproval] = useState<ApprovalResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const sourceParam =
+        new URLSearchParams(window.location.search).get("source") ??
+        readWorkflowSourceFromWindow();
+      const loaded = await loadWorkflowForSource(sourceParam);
+      if (cancelled) return;
+      if (!loaded.ok) {
+        setWorkflowState({
+          status: "error",
+          error: loaded.error,
+          blockers: loaded.blockers,
+          reviewHref: loaded.reviewHref,
+        });
+        return;
+      }
+      setWorkflowState({
+        status: "ready",
+        workflow: loaded.workflow,
+        source: loaded.source,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const reviewHref =
+    workflowState.status === "ready"
+      ? workflowState.source === "sample"
+        ? routes.demo
+        : routes.inferred
+      : workflowState.status === "error"
+        ? workflowState.reviewHref
+        : routes.demo;
 
   if (!API_CONFIGURED || !API_URL) {
     return (
@@ -105,7 +129,13 @@ export default function GeneratedInvoiceProcessorPage() {
     setApproval(null);
     setApprovalConfirmed(false);
     try {
-      if (!workflowState.ok) throw new Error(workflowState.error);
+      if (workflowState.status !== "ready") {
+        throw new Error(
+          workflowState.status === "error"
+            ? workflowState.error
+            : "Workflow is still loading.",
+        );
+      }
       const response = await fetch(`${API_URL}/api/v1/invoices/process`, {
         body: JSON.stringify({
           invoice_file: invoiceFile,
@@ -114,8 +144,16 @@ export default function GeneratedInvoiceProcessorPage() {
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      if (!response.ok)
-        throw new Error(`Processor request failed (${response.status})`);
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new Error(
+          payload.detail
+            ? `Processor request failed (${response.status}): ${payload.detail}`
+            : `Processor request failed (${response.status})`,
+        );
+      }
       setResult((await response.json()) as Result);
     } catch (reason) {
       setError(
@@ -131,9 +169,17 @@ export default function GeneratedInvoiceProcessorPage() {
     setApproving(true);
     setError(null);
     try {
-      if (!workflowState.ok) throw new Error(workflowState.error);
+      if (workflowState.status !== "ready") {
+        throw new Error(
+          workflowState.status === "error"
+            ? workflowState.error
+            : "Workflow is still loading.",
+        );
+      }
       if (!result.compiler_fingerprint) {
-        throw new Error("Cannot approve without a compiler hash from the processed workflow.");
+        throw new Error(
+          "Cannot approve without a compiler hash from the processed workflow.",
+        );
       }
       const response = await fetch(`${API_URL}/api/v1/invoices/approve`, {
         body: JSON.stringify({
@@ -141,9 +187,8 @@ export default function GeneratedInvoiceProcessorPage() {
           invoice_file: invoiceFile,
           workflow: workflowState.workflow,
           compiled_workflow_id: workflowState.workflow.id,
-          compiler_hash: result.compiler_fingerprint,
+          compiler_fingerprint: result.compiler_fingerprint,
           decision: "approved",
-          timestamp: new Date().toISOString(),
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
@@ -176,12 +221,15 @@ export default function GeneratedInvoiceProcessorPage() {
       <AnnouncementBar />
       <MarketingHeader />
       <section className="generated-page content-width">
-        <BackLink href={routes.demo} label="Back to workflow" />
+        <BackLink href={reviewHref} label="Back to workflow" />
         <div className="eyebrow">Generated application / invoice processor</div>
         <h1>Run the compiled workflow.</h1>
         <p className="generated-lede">
           This mini-application uses the same InvoiceCompilerConfig interpreter
           as generated source and artifact tests.
+          {workflowState.status === "ready"
+            ? ` Workflow source: ${workflowState.source}.`
+            : ""}
         </p>
         <div className="generated-layout">
           <section className="studio-card generated-card">
@@ -203,15 +251,27 @@ export default function GeneratedInvoiceProcessorPage() {
             <button
               className="button button-amber"
               onClick={() => void process()}
-              disabled={running || !workflowState.ok}
+              disabled={running || workflowState.status !== "ready"}
             >
               {running ? "Processing…" : "Process invoice →"}
             </button>
-            {!workflowState.ok && (
+            {workflowState.status === "loading" ? (
+              <p className="action-prerequisite">Loading workflow…</p>
+            ) : workflowState.status === "error" ? (
               <div className="notice notice-error" role="alert">
-                {workflowState.error}
+                <p>{workflowState.error}</p>
+                {workflowState.blockers && workflowState.blockers.length > 0 && (
+                  <ul>
+                    {workflowState.blockers.map((blocker) => (
+                      <li key={blocker.code}>{blocker.message}</li>
+                    ))}
+                  </ul>
+                )}
+                <Link href={workflowState.reviewHref}>
+                  Return to workflow review
+                </Link>
               </div>
-            )}
+            ) : null}
             {error && (
               <div className="notice notice-error" role="alert">
                 {error}
@@ -271,10 +331,15 @@ export default function GeneratedInvoiceProcessorPage() {
                 )}
                 {approval && (
                   <div className="approval-confirmation" role="status">
-                    <strong>Approval recorded</strong>
+                    <strong>Synthetic approval receipt generated</strong>
                     <span>{approval.approval_record_id}</span>
                     <span>{approval.compiled_workflow_id}</span>
-                    <span>{approval.compiler_hash}</span>
+                    <span>{approval.compiler_fingerprint}</span>
+                    <span>Recorded at {approval.recorded_at}</span>
+                    <small>
+                      Non-persistent. No payment executed. No external system
+                      changed.
+                    </small>
                     <small>{approval.message}</small>
                   </div>
                 )}
@@ -288,8 +353,8 @@ export default function GeneratedInvoiceProcessorPage() {
               Runtime behavior is driven by InvoiceCompilerConfig extracted from
               WorkflowIR, matching the generated artifact.
             </p>
-            <Link className="button button-outline" href="/workflows/demo">
-              Inspect workflow IR
+            <Link className="button button-outline" href={reviewHref}>
+              Return to workflow review
             </Link>
           </aside>
         </div>

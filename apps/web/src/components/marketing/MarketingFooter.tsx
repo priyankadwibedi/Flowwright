@@ -6,9 +6,7 @@ export function MarketingFooter() {
     <footer className="marketing-footer" id="about">
       <div className="app-container footer-inner">
         <div className="footer-brand">
-          <div className="footer-wordmark">
-            flowwright<span>®</span>
-          </div>
+          <div className="footer-wordmark">flowwright</div>
           <p>Show the work. Ship the workflow.</p>
         </div>
         <nav className="footer-links" aria-label="Footer">

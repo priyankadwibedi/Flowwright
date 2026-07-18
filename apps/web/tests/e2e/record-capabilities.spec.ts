@@ -185,7 +185,7 @@ test("sample invoice workflow remains accessible and AI label does not silent-st
     .click();
   await expect(
     page.getByRole("heading", {
-      name: "Review the workflow Flowwright inferred.",
+      name: "Explore the sample invoice workflow.",
     }),
   ).toBeVisible();
 });

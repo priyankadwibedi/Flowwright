@@ -17,6 +17,7 @@ import {
   type ProcessedDemonstration,
 } from "../../lib/validation";
 import { storeEvidenceCollection } from "../../lib/evidenceStore";
+import { saveInferredWorkflow } from "../../lib/workflowSession";
 import { AppContainer } from "../layout/AppContainer";
 import {
   BackendCapabilityStatus,
@@ -83,6 +84,13 @@ export function RecordingStudio() {
     useState<ActionStatus>("idle");
   const [analysisStatus, setAnalysisStatus] = useState<ActionStatus>("idle");
   const [message, setMessage] = useState("");
+  const [analysisErrorTitle, setAnalysisErrorTitle] = useState<string | null>(
+    null,
+  );
+  const [analysisTechnicalDetails, setAnalysisTechnicalDetails] = useState<
+    string | null
+  >(null);
+  const [showAnalysisDetails, setShowAnalysisDetails] = useState(false);
 
   const isRecording = status === "Recording";
   const aiAnalysisEnabled =
@@ -288,6 +296,9 @@ export function RecordingStudio() {
   async function analyzeDemonstration() {
     if (!canInferWorkflow || !processed || !API_URL) return;
     setAnalysisStatus("processing");
+    setAnalysisErrorTitle(null);
+    setAnalysisTechnicalDetails(null);
+    setShowAnalysisDetails(false);
     setMessage("Sending reviewed evidence to the configured AI analyzer...");
     try {
       const response = await fetch(`${API_URL}/api/v1/workflows/analyze`, {
@@ -300,12 +311,20 @@ export function RecordingStudio() {
         }),
       });
       if (!response.ok) {
-        throw new Error(
-          await describeApiError(response, "AI analysis unavailable"),
-        );
+        const parsed = await parseAnalysisError(response);
+        if (parsed.kind === "validation") {
+          setAnalysisStatus("error");
+          setAnalysisErrorTitle("Workflow validation failed");
+          setAnalysisTechnicalDetails(parsed.technical);
+          setMessage(
+            "Flowwright inferred the workflow, but one evidence reference could not be normalized. Retry the analysis or review the technical details.",
+          );
+          return;
+        }
+        throw new Error(parsed.technical);
       }
       const workflow = workflowIRSchema.parse(await response.json());
-      sessionStorage.setItem("flowwright.workflow", JSON.stringify(workflow));
+      saveInferredWorkflow(workflow);
       if (processed.demonstration_id) {
         sessionStorage.setItem(
           "flowwright.demonstration_id",
@@ -318,6 +337,7 @@ export function RecordingStudio() {
       );
     } catch (error) {
       setAnalysisStatus("error");
+      setAnalysisErrorTitle(null);
       setMessage(
         error instanceof Error
           ? error.message
@@ -545,7 +565,9 @@ export function RecordingStudio() {
                   >
                     {analysisStatus === "processing"
                       ? "Inferring…"
-                      : "Infer workflow with AI"}
+                      : analysisStatus === "error" && analysisErrorTitle
+                        ? "Retry AI inference"
+                        : "Infer workflow with AI"}
                   </button>
                   {inferDisabledReason && (
                     <p className="action-prerequisite">{inferDisabledReason}</p>
@@ -559,18 +581,39 @@ export function RecordingStudio() {
                   {analysisStatus === "ready" && (
                     <button
                       className="button button-outline"
-                      onClick={() => router.push("/workflows/demo")}
+                      onClick={() => router.push("/workflows/inferred")}
                     >
                       Open inferred workflow
                     </button>
                   )}
                 </div>
                 {message && (
-                  <p
+                  <div
                     className={`analysis-message ${analysisStatus === "error" || processingStatus === "error" ? "error" : analysisStatus === "ready" ? "ready" : ""}`}
                   >
-                    {message}
-                  </p>
+                    {analysisErrorTitle && <strong>{analysisErrorTitle}</strong>}
+                    <p>{message}</p>
+                    {analysisTechnicalDetails && (
+                      <>
+                        <button
+                          className="button button-outline"
+                          type="button"
+                          onClick={() =>
+                            setShowAnalysisDetails((current) => !current)
+                          }
+                        >
+                          {showAnalysisDetails
+                            ? "Hide technical details"
+                            : "Show technical details"}
+                        </button>
+                        {showAnalysisDetails && (
+                          <pre className="analysis-technical-details">
+                            {analysisTechnicalDetails}
+                          </pre>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
                 {processed && <EvidenceReview processed={processed} />}
               </section>
@@ -580,6 +623,81 @@ export function RecordingStudio() {
       </AppContainer>
     </div>
   );
+}
+
+type ParsedAnalysisError = {
+  kind: "validation" | "other";
+  technical: string;
+};
+
+async function parseAnalysisError(
+  response: Response,
+): Promise<ParsedAnalysisError> {
+  try {
+    const payload = (await response.json()) as {
+      detail?:
+        | string
+        | {
+            code?: string;
+            message?: string;
+            issues?: Array<{
+              step_id?: string | null;
+              reference?: string | null;
+              expected_location?: string | null;
+              message?: string | null;
+            }>;
+          };
+    };
+    const detail = payload.detail;
+    if (detail && typeof detail === "object") {
+      const code = detail.code ?? "";
+      const isValidation =
+        response.status === 422 &&
+        (code.includes("validation") ||
+          code.includes("reference") ||
+          Boolean(detail.issues?.length));
+      const issueLines = (detail.issues ?? [])
+        .map((issue) => {
+          const parts = [
+            issue.step_id ? `step=${issue.step_id}` : null,
+            issue.reference ? `ref=${issue.reference}` : null,
+            issue.expected_location
+              ? `expected=${issue.expected_location}`
+              : null,
+            issue.message ?? null,
+          ].filter(Boolean);
+          return parts.join(" · ");
+        })
+        .filter(Boolean);
+      const technical = [
+        detail.message ?? "Workflow validation failed",
+        ...issueLines,
+      ].join("\n");
+      return {
+        kind: isValidation ? "validation" : "other",
+        technical,
+      };
+    }
+    if (typeof detail === "string" && detail) {
+      const looksLikeReference =
+        /unknown input|evidence|input_ref|frame-/i.test(detail);
+      return {
+        kind: response.status === 422 && looksLikeReference
+          ? "validation"
+          : "other",
+        technical:
+          response.status === 422 && looksLikeReference
+            ? detail
+            : `Request failed (${response.status}): ${detail}`,
+      };
+    }
+  } catch {
+    // Keep the status-based fallback when the server did not return JSON.
+  }
+  return {
+    kind: "other",
+    technical: `Request failed (${response.status})`,
+  };
 }
 
 async function describeApiError(

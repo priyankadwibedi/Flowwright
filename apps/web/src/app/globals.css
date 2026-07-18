@@ -1114,8 +1114,70 @@ summary:focus-visible {
   margin: 14px 0 0;
   max-width: 760px;
 }
-.architecture-section {
-  margin-top: 48px;
+.architecture-compact-pipeline {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.architecture-compact-pipeline li {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+.architecture-compact-pipeline span {
+  color: var(--color-accent);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.architecture-compact-pipeline h3 {
+  font-size: 1rem;
+  margin: 0 0 6px;
+}
+.architecture-compact-pipeline p {
+  color: var(--color-muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  margin: 0;
+}
+.architecture-details {
+  margin-top: 20px;
+}
+.architecture-details summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+.architecture-stack.compact {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  display: grid;
+  gap: 10px;
+  padding: 20px 22px;
+}
+.architecture-stack.compact p {
+  color: var(--color-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  margin: 0;
+}
+.architecture-stack.compact b {
+  color: var(--color-ink);
+  margin-right: 8px;
+}
+.correction-status {
+  color: var(--color-muted);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  min-height: 1.2em;
 }
 .architecture-section h2,
 .architecture-trust-boundary h2,
@@ -1857,6 +1919,24 @@ summary:focus-visible {
   font-size: 0.8rem;
   padding-left: 12px;
 }
+.analysis-message strong {
+  display: block;
+  margin-bottom: 6px;
+}
+.analysis-message p {
+  margin: 0 0 10px;
+}
+.analysis-technical-details {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  margin-top: 10px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
 .analysis-message.error {
   border-color: var(--color-error);
   color: var(--color-error);
@@ -2515,6 +2595,9 @@ summary:focus-visible {
     grid-template-columns: 1fr;
   }
   .architecture-layers {
+    grid-template-columns: 1fr;
+  }
+  .architecture-compact-pipeline {
     grid-template-columns: 1fr;
   }
   .studio-page,

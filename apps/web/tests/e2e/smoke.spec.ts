@@ -140,6 +140,75 @@ test("home, invoice demo, graph, and test results are reachable", async ({
         }),
       }),
   );
+  await page.route(
+    "http://localhost:8000/api/v1/workflows/compile-readiness",
+    async (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          supported: true,
+          ready: true,
+          workflow_kind: "invoice_approval",
+          blockers: [],
+          warnings: [],
+        }),
+      }),
+  );
+  await page.route(
+    "**/api/v1/workflows/compile-readiness",
+    async (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          supported: true,
+          ready: true,
+          workflow_kind: "invoice_approval",
+          blockers: [],
+          warnings: [],
+        }),
+      }),
+  );
+  await page.addInitScript(() => {
+    const workflow = {
+      id: "invoice-approval-demo",
+      name: "Invoice approval",
+      description: "Synthetic invoice workflow",
+      version: "0.1.0",
+      workflow_kind: "invoice_approval",
+      inputs: [],
+      variables: [],
+      steps: [
+        {
+          id: "invoice_upload",
+          name: "Invoice upload",
+          type: "input",
+          description: "",
+          depends_on: [],
+          input_refs: [],
+          output_refs: [],
+          configuration: {},
+          requires_ai: false,
+          requires_approval: false,
+        },
+      ],
+      decisions: [],
+      approvals: [],
+      uncertainties: [],
+      tests: [],
+      confidence: 0.9,
+      created_at: "2026-07-15T00:00:00Z",
+    };
+    window.sessionStorage.setItem(
+      "flowwright.workflow.sample",
+      JSON.stringify({
+        workflow,
+        origin: "sample",
+        savedAt: new Date().toISOString(),
+      }),
+    );
+  });
   await page.goto("/");
   await expect(
     page.getByRole("heading", {
@@ -149,12 +218,12 @@ test("home, invoice demo, graph, and test results are reachable", async ({
   await page.getByRole("link", { name: "Watch the demo" }).click();
   await expect(
     page.getByRole("heading", {
-      name: "Review the workflow Flowwright inferred.",
+      name: "Explore the sample invoice workflow.",
     }),
   ).toBeVisible();
   await expect(page.getByText(/Invoice approval/i).first()).toBeVisible();
   await expect(page.locator(".workflow-canvas")).toBeVisible();
-  await page.goto("/tests");
+  await page.goto("/tests?source=sample");
   await expect(page.getByText("Matching invoice")).toBeVisible();
   await expect(page.getByText("Unreadable invoice number")).toBeVisible();
 });

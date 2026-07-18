@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -17,6 +18,19 @@ StepType = Literal[
     "approval",
     "human_review",
 ]
+
+
+class InvoiceStepRole(StrEnum):
+    """Canonical invoice-compiler roles independent of UI step display names."""
+
+    INVOICE_INPUT = "invoice_input"
+    EXTRACT_FIELDS = "extract_fields"
+    LOOKUP_PURCHASE_ORDER = "lookup_purchase_order"
+    VALIDATE_REQUIRED_FIELDS = "validate_required_fields"
+    COMPARE_AMOUNTS = "compare_amounts"
+    APPROVAL = "approval"
+    EXCEPTION = "exception"
+    HUMAN_REVIEW = "human_review"
 TestStatus = Literal["pending", "passed", "failed", "human_review"]
 EvidenceSource = Literal["frame", "browser_event", "speech"]
 ValuePolicy = Literal["omitted", "masked", "captured"]
@@ -183,6 +197,7 @@ class WorkflowStep(BaseModel):
     confidence: float = Field(default=0.0, ge=0, le=1)
     evidence_ids: list[str] = Field(default_factory=list)
     accidental: bool = False
+    semantic_role: InvoiceStepRole | None = None
 
 
 class WorkflowDecision(BaseModel):
@@ -232,6 +247,7 @@ class WorkflowUncertainty(BaseModel):
     answer_type: AnswerType = "single_select"
     allowed_options: list[str] = Field(default_factory=list)
     resolution_target: str = ""
+    resolved: bool = False
 
 
 class WorkflowTest(BaseModel):
@@ -292,16 +308,49 @@ class WorkflowStepDraft(BaseModel):
     name: str = Field(min_length=1)
     type: StepType
     description: str
-    depends_on: list[str]
-    input_refs: list[str]
-    output_refs: list[str]
+    depends_on: list[str] = Field(
+        description=(
+            "IDs of earlier workflow steps. Never include frame, event, or "
+            "speech evidence IDs."
+        )
+    )
+    input_refs: list[str] = Field(
+        description=(
+            "Workflow data references only. Each value must be either a "
+            "declared workflow input ID or an output_ref from an earlier "
+            "step. Never include evidence IDs such as frame-*, event-*, "
+            "speech-*, screenshot-*, or transcript-*."
+        )
+    )
+    output_refs: list[str] = Field(
+        description=(
+            "Stable IDs for data produced by this workflow step. These IDs "
+            "may be used by later steps as input_refs."
+        )
+    )
     configuration: list[KeyValueEntry]
     requires_ai: bool
     requires_approval: bool
     confidence: float = Field(ge=0, le=1)
-    evidence_ids: list[str]
+    evidence_ids: list[str] = Field(
+        description=(
+            "IDs of frames, browser events, or transcript segments that "
+            "support this inferred step. Evidence IDs belong only here."
+        )
+    )
     observation_kind: Literal["observed", "inferred"] = "observed"
     accidental: bool = False
+    # Required-nullable for OpenAI structured output: always present, may be null.
+    semantic_role: InvoiceStepRole | None = None
+
+
+class WorkflowInputDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str
+    data_type: Literal["file", "text", "record", "table", "number", "boolean"]
 
 
 class WorkflowDecisionDraft(BaseModel):
@@ -315,7 +364,12 @@ class WorkflowDecisionDraft(BaseModel):
     true_target_step_id: str
     false_target_step_id: str
     confidence: float = Field(ge=0, le=1)
-    evidence_ids: list[str]
+    evidence_ids: list[str] = Field(
+        description=(
+            "Evidence IDs that support this decision. Never place these in "
+            "workflow data references."
+        )
+    )
 
 
 class WorkflowApprovalDraft(BaseModel):
@@ -326,7 +380,9 @@ class WorkflowApprovalDraft(BaseModel):
     description: str
     protected_action: str
     required_before_step_id: str
-    evidence_ids: list[str]
+    evidence_ids: list[str] = Field(
+        description="Evidence IDs supporting this approval gate."
+    )
 
 
 class WorkflowDraft(BaseModel):
@@ -335,11 +391,39 @@ class WorkflowDraft(BaseModel):
     name: str = Field(min_length=1)
     description: str
     workflow_kind: WorkflowKind
+    inputs: list[WorkflowInputDraft] = Field(
+        default_factory=list,
+        description=(
+            "Optional declared workflow inputs. Prefer the supplied AVAILABLE "
+            "WORKFLOW INPUT IDS when provided by the server."
+        ),
+    )
     variables: list[WorkflowVariableDraft]
     steps: list[WorkflowStepDraft] = Field(min_length=1)
     decisions: list[WorkflowDecisionDraft]
     approvals: list[WorkflowApprovalDraft]
     uncertainties: list[WorkflowUncertainty]
+
+
+class AnalysisIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_id: str | None = None
+    reference: str | None = None
+    reference_type: Literal[
+        "evidence", "workflow_input", "step_output", "unknown", "validation"
+    ] = "unknown"
+    expected_location: str | None = None
+    message: str | None = None
+
+
+class AnalysisErrorDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    retryable: bool = True
+    issues: list[AnalysisIssue] = Field(default_factory=list)
 
 
 class AnalyzeRequest(BaseModel):
@@ -429,6 +513,32 @@ class ExecutableWorkflow(BaseModel):
     generator_version: str
     compiler_fingerprint: str | None = None
     workflow_kind: WorkflowKind = "invoice_approval"
+    workflow_source: Literal["sample", "inferred"] | None = None
+    workflow_version: str | None = None
+    compiler_hash: str | None = None
+
+
+class CompileReadinessBlocker(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+
+
+class CompileReadinessRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow: WorkflowIR
+
+
+class CompileReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    supported: bool
+    ready: bool
+    workflow_kind: WorkflowKind
+    blockers: list[CompileReadinessBlocker] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class InvoiceProcessRequest(BaseModel):
@@ -444,13 +554,14 @@ class InvoiceProcessRequest(BaseModel):
 
 
 class InvoiceApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     invoice_file: InvoiceFixture
     confirm: bool
     workflow: WorkflowIR
     compiled_workflow_id: str = Field(min_length=1)
-    compiler_hash: str = Field(min_length=1)
+    compiler_fingerprint: str = Field(min_length=1)
     decision: Literal["approved"]
-    timestamp: datetime
 
 
 class InvoiceApprovalResponse(BaseModel):
@@ -459,10 +570,13 @@ class InvoiceApprovalResponse(BaseModel):
     message: str
     approval_record_id: str
     compiled_workflow_id: str
-    compiler_hash: str
+    compiler_fingerprint: str
     decision: Literal["approved"]
-    timestamp: datetime
+    recorded_at: datetime
     protected_action_executed: bool = False
+    persistent: bool = False
+    external_action_executed: bool = False
+    payment_executed: bool = False
 
 
 class WorkflowCorrection(BaseModel):

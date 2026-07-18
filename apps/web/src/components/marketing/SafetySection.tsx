@@ -10,7 +10,7 @@ const safetyItems = [
   ],
   [
     "Test before use",
-    "Generated workflow artifacts are executed in an isolated temporary directory before reuse.",
+    "Generated tests run in a temporary working directory with a scrubbed environment and timeout. Network isolation is not currently implemented.",
   ],
   [
     "Synthetic data",

@@ -3,7 +3,7 @@ const steps = [
   ["02", "Understand", "Identify actions, decisions, variables, and mistakes."],
   ["03", "Generate", "Compile the workflow into structured code."],
   ["04", "Test", "Run expected cases and edge cases."],
-  ["05", "Deploy", "Create an inspectable task-specific application."],
+  ["05", "Run", "Run the generated application using the validated compiler rules."],
 ] as const;
 
 export function ProcessSteps() {

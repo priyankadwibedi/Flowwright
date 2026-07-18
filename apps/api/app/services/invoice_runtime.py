@@ -103,7 +103,9 @@ def process_fixture(
 
 def approve_fixture(filename: str, workflow: WorkflowIR | None = None) -> str:
     """Record an explicit approval for synthetic data without external side effects."""
+    import uuid
+
     result = process_fixture(filename, workflow)
     if result.status is not WorkflowStatus.APPROVAL_REQUIRED:
         raise ValueError("Only an exact-match synthetic invoice can be approved")
-    return f"approval-{filename.removesuffix('.json')}"
+    return f"synthetic-receipt-{uuid.uuid4()}"

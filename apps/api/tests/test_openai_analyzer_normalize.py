@@ -1,7 +1,10 @@
 """Coverage for OpenAI draft normalization helpers."""
 
-from app.models.workflow import WorkflowStep
-from app.services.openai_analyzer import _ensure_entry_input_step
+from app.models.workflow import WorkflowApproval, WorkflowStep
+from app.services.openai_analyzer import (
+    _ensure_approval_gates,
+    _ensure_entry_input_step,
+)
 
 
 def _step(**overrides: object) -> WorkflowStep:
@@ -55,3 +58,46 @@ def test_inserts_input_when_no_roots():
     assert result[0].id == "workflow-input"
     assert "workflow-input" in result[1].depends_on
     assert "workflow-input" in result[2].depends_on
+
+
+def test_synthesizes_missing_approval_gate():
+    steps = [
+        _step(id="in", type="input", requires_ai=False, evidence_ids=[]),
+        _step(
+            id="prepare_for_approval",
+            name="Prepare for approval",
+            type="approval",
+            depends_on=["in"],
+            requires_ai=False,
+            requires_approval=True,
+            evidence_ids=["ev-1"],
+        ),
+    ]
+    fixed_steps, approvals = _ensure_approval_gates(steps, [])
+    assert fixed_steps[1].requires_approval is True
+    assert len(approvals) == 1
+    assert approvals[0].step_id == "prepare_for_approval"
+    assert approvals[0].id == "prepare_for_approval-gate"
+
+
+def test_keeps_existing_approval_gate():
+    steps = [
+        _step(
+            id="approve_invoice",
+            type="approval",
+            requires_ai=False,
+            requires_approval=True,
+        )
+    ]
+    existing = [
+        WorkflowApproval(
+            id="gate-1",
+            name="Existing gate",
+            description="keep me",
+            trigger="approve",
+            step_id="approve_invoice",
+            evidence_ids=["ev-1"],
+        )
+    ]
+    _, approvals = _ensure_approval_gates(steps, existing)
+    assert approvals == existing

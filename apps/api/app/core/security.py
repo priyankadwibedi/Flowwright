@@ -28,13 +28,16 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
 
     def _is_expensive_path(self, path: str) -> bool:
-        return path in {
-            "/api/v1/media/process",
+        expensive_exact = {
+            "/api/v1/media/keyframes",
+            "/api/v1/media/process-demonstration",
             "/api/v1/workflows/analyze",
             "/api/v1/workflows/test",
             "/api/v1/workflows/generate",
             "/api/v1/workflows/artifact",
-        } or path.startswith("/api/v1/invoices/")
+            "/api/v1/workflows/compile-readiness",
+        }
+        return path in expensive_exact or path.startswith("/api/v1/invoices/")
 
     def _rate_limited(self, ip: str) -> bool:
         now = time.time()

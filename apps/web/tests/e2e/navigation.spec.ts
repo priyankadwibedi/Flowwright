@@ -95,10 +95,23 @@ test("demo page renders workflow content and active nav", async ({ page }) => {
       }),
     }),
   );
+  await page.route("**/api/v1/workflows/compile-readiness", async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        supported: true,
+        ready: true,
+        workflow_kind: "invoice_approval",
+        blockers: [],
+        warnings: [],
+      }),
+    }),
+  );
   await page.goto(routes.demo);
   await expect(
     page.getByRole("heading", {
-      name: "Review the workflow Flowwright inferred.",
+      name: "Explore the sample invoice workflow.",
     }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to home" })).toBeVisible();
@@ -188,6 +201,19 @@ test("header navigation flow across architecture, demo, record, and home", async
       }),
     }),
   );
+  await page.route("**/api/v1/workflows/compile-readiness", async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        supported: true,
+        ready: true,
+        workflow_kind: "invoice_approval",
+        blockers: [],
+        warnings: [],
+      }),
+    }),
+  );
 
   await page.goto("/");
   await primaryNav(page).getByRole("link", { name: "Architecture" }).click();
@@ -200,7 +226,7 @@ test("header navigation flow across architecture, demo, record, and home", async
   await primaryNav(page).getByRole("link", { name: "Demo", exact: true }).click();
   await expect(
     page.getByRole("heading", {
-      name: "Review the workflow Flowwright inferred.",
+      name: "Explore the sample invoice workflow.",
     }),
   ).toBeVisible();
 
