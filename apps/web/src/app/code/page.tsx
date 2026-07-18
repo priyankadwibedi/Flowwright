@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 import { AnnouncementBar } from "../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../components/marketing/MarketingHeader";
+import { BackLink } from "../../components/navigation/BackLink";
 import { API_CONFIGURED, API_URL, apiUnavailableMessage } from "../../lib/config";
+import { routes } from "../../lib/routes";
 
 type GeneratedFile = { path: string; language: string; content: string };
 
@@ -110,6 +112,7 @@ export default function CodePage() {
       <AnnouncementBar />
       <MarketingHeader />
       <section className="code-page content-width">
+        <BackLink href={routes.demo} label="Back to workflow" />
         <div className="eyebrow">Generate / trusted artifact</div>
         <h1>Inspect the generated software.</h1>
         <p className="generated-lede">

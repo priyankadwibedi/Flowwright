@@ -53,9 +53,9 @@ def analyze_workflow(request: AnalyzeRequest) -> WorkflowIR:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "AI analysis is unavailable while FLOWWRIGHT_DEMO_MODE is enabled. "
-                "Turn demo mode off from the Record page (requires OPENAI_API_KEY and "
-                "OPENAI_MODEL), or set FLOWWRIGHT_DEMO_MODE=false in apps/api/.env."
+                "AI analysis is unavailable on this deployment. Configure the backend "
+                "with OpenAI credentials and set FLOWWRIGHT_DEMO_MODE=false, or use "
+                "the sample invoice workflow."
             ),
         )
     try:

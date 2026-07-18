@@ -11,6 +11,8 @@ import {
 import { sampleWorkflow } from "../../../lib/sampleWorkflow";
 import { AnnouncementBar } from "../../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../../components/marketing/MarketingHeader";
+import { BackLink } from "../../../components/navigation/BackLink";
+import { routes } from "../../../lib/routes";
 import { WorkflowCanvas } from "../../../components/workflow/WorkflowCanvas";
 import { WorkflowInspector } from "../../../components/workflow/WorkflowInspector";
 import { WorkflowLegend } from "../../../components/workflow/WorkflowLegend";
@@ -168,6 +170,7 @@ export default function DemoWorkflowPage() {
       <AnnouncementBar />
       <MarketingHeader />
       <section className="workflow-page content-width">
+        <BackLink href={routes.home} label="Back to home" />
         <div className="workflow-heading">
           <div>
             <div className="eyebrow">{headingEyebrow}</div>

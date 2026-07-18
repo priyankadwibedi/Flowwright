@@ -24,7 +24,11 @@ def test_demo_mode_analyze_without_key(client):
         "/api/v1/workflows/analyze", json={"task_description": "Approve invoices"}
     )
     assert response.status_code == 503
-    assert "FLOWWRIGHT_DEMO_MODE" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "AI analysis is unavailable on this deployment" in detail
+    assert "FLOWWRIGHT_DEMO_MODE=false" in detail
+    assert "Record page" not in detail
+    assert "turn demo mode off" not in detail.lower()
 
 
 def test_invoice_test_cases(client):

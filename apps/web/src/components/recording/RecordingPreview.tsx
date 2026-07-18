@@ -4,10 +4,7 @@ export function RecordingPreview({ videoUrl }: { videoUrl: string | null }) {
       <div className="recording-empty">
         <span className="recording-empty-icon">◉</span>
         <strong>Your browser preview appears here</strong>
-        <p>
-          Screen sharing stays local until you choose to analyze the
-          demonstration.
-        </p>
+        <p>Your recording remains in the browser until you choose Process evidence.</p>
       </div>
     );
   return (

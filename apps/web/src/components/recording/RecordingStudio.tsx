@@ -8,18 +8,27 @@ import { useRouter } from "next/navigation";
 import { workflowIRSchema } from "@flowwright/workflow-schema";
 import { API_CONFIGURED, API_URL } from "../../lib/config";
 import {
+  buildCombinedRecordingStream,
+  composeRecordingTracks,
+  type TrackStatus,
+} from "../../lib/recordingStreams";
+import {
   processedDemonstrationSchema,
   type ProcessedDemonstration,
 } from "../../lib/validation";
 import { storeEvidenceCollection } from "../../lib/evidenceStore";
 import { AppContainer } from "../layout/AppContainer";
-import { DemoModeToggle } from "./DemoModeToggle";
+import {
+  BackendCapabilityStatus,
+  useBackendCapabilities,
+} from "./BackendCapabilityStatus";
+import { BackLink } from "../navigation/BackLink";
 import { RecordingChecklist } from "./RecordingChecklist";
 import { RecordingControls } from "./RecordingControls";
 import { RecordingPreview } from "./RecordingPreview";
+import { routes } from "../../lib/routes";
 
 type ActionStatus = "idle" | "processing" | "ready" | "error";
-type TrackStatus = "active" | "unavailable" | "denied" | "off";
 
 function pickMimeType(): string {
   const candidates = [
@@ -38,8 +47,20 @@ function pickMimeType(): string {
   return "";
 }
 
+function processEvidenceReadiness(input: {
+  hasRecording: boolean;
+  hasDescription: boolean;
+  hasConsent: boolean;
+}): string {
+  if (!input.hasRecording) return "Record or upload a demonstration first.";
+  if (!input.hasDescription) return "Add a short description of the workflow.";
+  if (!input.hasConsent) return "Confirm the processing disclosure.";
+  return "Ready to process evidence.";
+}
+
 export function RecordingStudio() {
   const router = useRouter();
+  const capabilities = useBackendCapabilities();
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -63,6 +84,26 @@ export function RecordingStudio() {
   const [analysisStatus, setAnalysisStatus] = useState<ActionStatus>("idle");
   const [message, setMessage] = useState("");
 
+  const isRecording = status === "Recording";
+  const aiAnalysisEnabled =
+    capabilities.kind === "ready" && capabilities.status.ai_analysis_enabled;
+  const processReadyMessage = processEvidenceReadiness({
+    hasRecording: Boolean(recordingBlob),
+    hasDescription: Boolean(taskDescription.trim()),
+    hasConsent: consentUpload,
+  });
+  const canProcessEvidence =
+    Boolean(recordingBlob) &&
+    Boolean(taskDescription.trim()) &&
+    consentUpload &&
+    processingStatus !== "processing";
+  const canInferWorkflow =
+    Boolean(processed) &&
+    API_CONFIGURED &&
+    Boolean(API_URL) &&
+    aiAnalysisEnabled &&
+    analysisStatus !== "processing";
+
   function stopAllTracks() {
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
@@ -83,50 +124,41 @@ export function RecordingStudio() {
 
   async function start() {
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
+      const combined = await buildCombinedRecordingStream({
+        wantMicrophone: spokenExplanation,
+        getDisplayMedia: navigator.mediaDevices.getDisplayMedia.bind(
+          navigator.mediaDevices,
+        ),
+        getUserMedia: navigator.mediaDevices.getUserMedia.bind(
+          navigator.mediaDevices,
+        ),
       });
-      const tracks: MediaStreamTrack[] = [...display.getVideoTracks()];
-      const displayAudio = display.getAudioTracks();
-      setScreenAudioStatus(displayAudio.length ? "active" : "unavailable");
+      stream.current = combined.stream;
+      setScreenAudioStatus(combined.screenAudioStatus);
+      setMicrophoneStatus(combined.microphoneStatus);
 
-      let micStream: MediaStream | null = null;
-      if (spokenExplanation) {
-        try {
-          micStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: false,
-          });
-          setMicrophoneStatus("active");
-        } catch {
-          setMicrophoneStatus("denied");
-          micStream = null;
-        }
-      } else {
-        setMicrophoneStatus("off");
+      const initialScreenActive = combined.screenAudioStatus === "active";
+      const initialMicActive = combined.microphoneStatus === "active";
+      for (const track of combined.stream.getAudioTracks()) {
+        track.addEventListener("ended", () => {
+          const liveAudio = combined.stream
+            .getAudioTracks()
+            .filter((item) => item.readyState === "live");
+          if (initialMicActive) {
+            setMicrophoneStatus(liveAudio.length ? "active" : "unavailable");
+          }
+          if (initialScreenActive) {
+            setScreenAudioStatus(liveAudio.length ? "active" : "unavailable");
+          }
+        });
       }
 
-      // Prefer microphone narration; keep display audio only when mic is unavailable.
-      if (micStream?.getAudioTracks().length) {
-        tracks.push(...micStream.getAudioTracks());
-      } else if (displayAudio.length) {
-        tracks.push(...displayAudio);
-      } else {
-        displayAudio.forEach((track) => track.stop());
-      }
-      if (micStream?.getAudioTracks().length) {
-        displayAudio.forEach((track) => track.stop());
-      }
-
-      const combined = new MediaStream(tracks);
-      stream.current = combined;
       chunks.current = [];
       const selectedType = pickMimeType();
       mimeType.current = selectedType;
       const mediaRecorder = selectedType
-        ? new MediaRecorder(combined, { mimeType: selectedType })
-        : new MediaRecorder(combined);
+        ? new MediaRecorder(combined.stream, { mimeType: selectedType })
+        : new MediaRecorder(combined.stream);
       mimeType.current = mediaRecorder.mimeType || selectedType || "video/webm";
 
       mediaRecorder.ondataavailable = (event) => {
@@ -137,7 +169,7 @@ export function RecordingStudio() {
         setMessage("MediaRecorder reported an error. Recording stopped.");
         stop();
       };
-      const videoTrack = combined.getVideoTracks()[0];
+      const videoTrack = combined.stream.getVideoTracks()[0];
       videoTrack?.addEventListener("ended", () => {
         setMessage("Shared screen ended. Recording stopped.");
         stop();
@@ -170,7 +202,7 @@ export function RecordingStudio() {
     } catch {
       setStatus("Screen sharing was cancelled or unavailable");
       setScreenAudioStatus("off");
-      setMicrophoneStatus("off");
+      setMicrophoneStatus(spokenExplanation ? "off" : "off");
     }
   }
 
@@ -192,12 +224,7 @@ export function RecordingStudio() {
   }
 
   async function processEvidence() {
-    if (!recordingBlob) return;
-    if (!consentUpload) {
-      setProcessingStatus("error");
-      setMessage("Confirm the privacy disclosure before uploading evidence.");
-      return;
-    }
+    if (!recordingBlob || !taskDescription.trim() || !consentUpload) return;
     if (!API_CONFIGURED || !API_URL) {
       setProcessingStatus("error");
       setMessage(
@@ -211,8 +238,9 @@ export function RecordingStudio() {
     );
     try {
       const media = new FormData();
-      // Strip codec parameters so the upload Content-Type is a bare video/webm|mp4.
-      const baseType = (recordingBlob.type || "video/webm").split(";", 1)[0].trim();
+      const baseType = (recordingBlob.type || "video/webm")
+        .split(";", 1)[0]
+        .trim();
       const extension = baseType.includes("mp4")
         ? "mp4"
         : baseType.includes("quicktime")
@@ -258,23 +286,7 @@ export function RecordingStudio() {
   }
 
   async function analyzeDemonstration() {
-    if (!taskDescription.trim()) {
-      setAnalysisStatus("error");
-      setMessage("Add a short description of what you demonstrated first.");
-      return;
-    }
-    if (!processed) {
-      setAnalysisStatus("error");
-      setMessage("Process the evidence before requesting AI inference.");
-      return;
-    }
-    if (!API_CONFIGURED || !API_URL) {
-      setAnalysisStatus("error");
-      setMessage(
-        "AI analysis is unavailable because the production API URL is not configured.",
-      );
-      return;
-    }
+    if (!canInferWorkflow || !processed || !API_URL) return;
     setAnalysisStatus("processing");
     setMessage("Sending reviewed evidence to the configured AI analyzer...");
     try {
@@ -329,11 +341,21 @@ export function RecordingStudio() {
     setProcessingStatus("idle");
   }
 
-  const backendHost = API_URL ? new URL(API_URL).host : "not configured";
+  const inferDisabledReason =
+    capabilities.kind === "loading"
+      ? "Checking backend capabilities…"
+      : capabilities.kind === "unavailable" || !API_CONFIGURED || !API_URL
+        ? "Processing backend unavailable."
+        : !aiAnalysisEnabled
+          ? "Live AI inference is unavailable on this deployment. Use the sample invoice workflow or enable the AI backend."
+          : !processed
+            ? "Process evidence before requesting AI inference."
+            : null;
 
   return (
     <div className="studio-page">
       <AppContainer>
+        <BackLink href={routes.home} label="Back to home" />
         <header className="record-intro">
           <div className="eyebrow">Demonstrate / 01</div>
           <h1>Record the task once.</h1>
@@ -346,20 +368,12 @@ export function RecordingStudio() {
 
         <div className="record-layout">
           <aside className="record-context">
-            <div className="privacy-badge">
-              <span>privacy</span>
-              <div>
-                <strong>Privacy first</strong>
-                <small>
-                  Never record passwords, private messages, or payment details.
-                </small>
-              </div>
-            </div>
             <RecordingChecklist
               hasRecording={Boolean(videoUrl)}
               hasDescription={Boolean(taskDescription.trim())}
               hasEvents={Boolean(eventLog)}
             />
+            <BackendCapabilityStatus state={capabilities} />
             <div className="studio-note">
               <span className="mono-label">Optional extension</span>
               <h3>Capture safer browser events.</h3>
@@ -376,19 +390,20 @@ export function RecordingStudio() {
                 Read the capture guide →
               </a>
             </div>
-            <DemoModeToggle />
-            <div className="studio-note warning">
-              <span className="mono-label">Prototype boundary</span>
-              <p>
-                AI inference is unavailable without a configured backend and
-                OpenAI key. The sample invoice workflow remains available
-                separately.
-              </p>
+            <div className="privacy-badge">
+              <span>privacy</span>
+              <div>
+                <strong>Privacy reminder</strong>
+                <small>
+                  Never record passwords, private messages, or payment details.
+                  Upload begins only after Process evidence.
+                </small>
+              </div>
             </div>
           </aside>
 
           <section className="record-main">
-            <div className="studio-card recording-card">
+            <div className="studio-card recording-card" id="recording-card">
               <div className="studio-card-header">
                 <div>
                   <span className="mono-label">Screen capture</span>
@@ -399,6 +414,29 @@ export function RecordingStudio() {
                 </span>
               </div>
               <RecordingPreview videoUrl={videoUrl} />
+              <label className="toggle-row mic-choice">
+                <input
+                  type="checkbox"
+                  checked={spokenExplanation}
+                  disabled={isRecording}
+                  onChange={(event) =>
+                    setSpokenExplanation(event.target.checked)
+                  }
+                />
+                <span className="toggle-ui" />
+                <span>
+                  Include microphone narration
+                  {spokenExplanation
+                    ? microphoneStatus === "denied"
+                      ? " · permission denied"
+                      : microphoneStatus === "active"
+                        ? " · permission granted"
+                        : microphoneStatus === "unavailable"
+                          ? " · unavailable"
+                          : " · will request permission"
+                    : " · off"}
+                </span>
+              </label>
               <RecordingControls
                 status={status}
                 seconds={seconds}
@@ -442,17 +480,6 @@ export function RecordingStudio() {
                   onChange={(event) => setTaskDescription(event.target.value)}
                   placeholder="Review an invoice, find its purchase order, and approve matching totals."
                 />
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={spokenExplanation}
-                    onChange={(event) =>
-                      setSpokenExplanation(event.target.checked)
-                    }
-                  />
-                  <span className="toggle-ui" />
-                  <span>Request microphone narration when recording</span>
-                </label>
                 <div className="privacy-disclosure">
                   <p>
                     Your recording stays local until you select Process
@@ -461,22 +488,6 @@ export function RecordingStudio() {
                     later be sent to the configured AI provider when you request
                     AI inference.
                   </p>
-                  <ul>
-                    <li>Backend host: {backendHost}</li>
-                    <li>
-                      Transcription:{" "}
-                      {API_CONFIGURED
-                        ? "available when API key is set"
-                        : "disabled"}
-                    </li>
-                    <li>
-                      AI analysis:{" "}
-                      {API_CONFIGURED
-                        ? "available when configured"
-                        : "disabled"}
-                    </li>
-                    <li>Media retention: not retained by default</li>
-                  </ul>
                   <label className="toggle-row">
                     <input
                       type="checkbox"
@@ -519,31 +530,31 @@ export function RecordingStudio() {
                 <div className="compile-actions">
                   <button
                     className="button button-amber"
-                    onClick={processEvidence}
-                    disabled={
-                      processingStatus === "processing" ||
-                      !recordingBlob ||
-                      !consentUpload
-                    }
+                    onClick={() => void processEvidence()}
+                    disabled={!canProcessEvidence}
                   >
                     {processingStatus === "processing"
                       ? "Processing evidence..."
                       : "Process evidence"}
                   </button>
+                  <p className="action-prerequisite">{processReadyMessage}</p>
                   <button
                     className="button button-outline"
-                    onClick={analyzeDemonstration}
-                    disabled={analysisStatus === "processing" || !processed}
+                    onClick={() => void analyzeDemonstration()}
+                    disabled={!canInferWorkflow}
                   >
                     {analysisStatus === "processing"
-                      ? "Analyzing..."
-                      : "Analyze my demonstration with AI →"}
+                      ? "Inferring…"
+                      : "Infer workflow with AI"}
                   </button>
+                  {inferDisabledReason && (
+                    <p className="action-prerequisite">{inferDisabledReason}</p>
+                  )}
                   <Link
                     className="button button-outline"
                     href="/workflows/demo"
                   >
-                    Try sample invoice demo
+                    Open sample invoice workflow
                   </Link>
                   {analysisStatus === "ready" && (
                     <button
@@ -589,6 +600,7 @@ async function describeApiError(
 function EvidenceReview({ processed }: { processed: ProcessedDemonstration }) {
   return (
     <div className="evidence-review" aria-live="polite">
+      <BackLink href={`${routes.record}#recording-card`} label="Back to recording" />
       <div className="evidence-review-header">
         <span className="mono-label">Evidence review</span>
         <span>
@@ -640,28 +652,16 @@ export async function mergeRecordingTracksForTest(options: {
   screenAudioStatus: TrackStatus;
   microphoneStatus: TrackStatus;
 }> {
-  const display = await options.getDisplayMedia({ video: true, audio: true });
-  const tracks: MediaStreamTrack[] = [...display.getVideoTracks()];
-  const displayAudio = display.getAudioTracks();
-  let screenAudioStatus: TrackStatus = displayAudio.length
-    ? "active"
-    : "unavailable";
-  let microphoneStatus: TrackStatus = "off";
-  if (options.spokenExplanation) {
-    try {
-      const mic = await options.getUserMedia({ audio: true, video: false });
-      microphoneStatus = "active";
-      tracks.push(...mic.getAudioTracks());
-    } catch {
-      microphoneStatus = "denied";
-      tracks.push(...displayAudio);
-    }
-  } else {
-    tracks.push(...displayAudio);
-  }
+  const result = await buildCombinedRecordingStream({
+    wantMicrophone: options.spokenExplanation,
+    getDisplayMedia: options.getDisplayMedia,
+    getUserMedia: options.getUserMedia,
+  });
   return {
-    trackKinds: tracks.map((track) => track.kind),
-    screenAudioStatus,
-    microphoneStatus,
+    trackKinds: result.stream.getTracks().map((track) => track.kind),
+    screenAudioStatus: result.screenAudioStatus,
+    microphoneStatus: result.microphoneStatus,
   };
 }
+
+export { composeRecordingTracks };

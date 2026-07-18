@@ -5,9 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 import { AnnouncementBar } from "../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../components/marketing/MarketingHeader";
+import { BackLink } from "../../components/navigation/BackLink";
 import { TestResultCard } from "../../components/testing/TestResultCard";
 import { TestSummary } from "../../components/testing/TestSummary";
 import { API_CONFIGURED, API_URL, apiUnavailableMessage } from "../../lib/config";
+import { routes } from "../../lib/routes";
 import {
   testRunResponseSchema,
   type TestRunResponse,
@@ -81,6 +83,7 @@ export default function TestsPage() {
       <AnnouncementBar />
       <MarketingHeader />
       <section className="tests-page content-width">
+        <BackLink href={routes.demo} label="Back to workflow" />
         <div className="tests-heading">
           <div>
             <div className="eyebrow">Verification / 04</div>

@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { externalLinks, primaryNavItems, routes } from "../../lib/routes";
 
 export function FlowwrightMark() {
   return (
@@ -16,19 +18,14 @@ export function FlowwrightMark() {
   );
 }
 
-const navItems = [
-  ["Product", "/#product"],
-  ["How it works", "/#process"],
-  ["Architecture", "/workflows/demo"],
-  ["About", "/#about"],
-] as const;
-
 export function MarketingHeader() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
   return (
     <header className="marketing-header">
       <div className="app-container marketing-header-inner">
-        <Link className="brand" href="/" onClick={() => setOpen(false)}>
+        <Link className="brand" href={routes.home} onClick={() => setOpen(false)}>
           <FlowwrightMark />
           <span>flowwright</span>
         </Link>
@@ -45,25 +42,31 @@ export function MarketingHeader() {
         <nav
           id="primary-navigation"
           className={`primary-navigation${open ? " is-open" : ""}`}
+          aria-label="Primary"
         >
           <div className="nav-center">
-            {navItems.map(([label, href]) => (
-              <Link key={label} href={href} onClick={() => setOpen(false)}>
-                {label}
-              </Link>
-            ))}
+            {primaryNavItems.map(({ label, href, isActive }) => {
+              const active = isActive(pathname);
+              return (
+                <Link
+                  key={label}
+                  href={href}
+                  className={active ? "is-active" : undefined}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => setOpen(false)}
+                >
+                  {label}
+                </Link>
+              );
+            })}
           </div>
           <div className="nav-actions">
-            <a
-              href="https://github.com/priyankadwibedi/Flowwright"
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a href={externalLinks.github} target="_blank" rel="noreferrer">
               GitHub
             </a>
             <Link
               className="button button-amber button-small"
-              href="/record"
+              href={routes.record}
               onClick={() => setOpen(false)}
             >
               Try Flowwright <span aria-hidden="true">↗</span>

@@ -6,7 +6,8 @@ export default defineConfig({
     command: "pnpm build && pnpm start",
     env: { NEXT_PUBLIC_FLOWWRIGHT_API_URL: "http://localhost:8000" },
     url: "http://localhost:3000",
-    reuseExistingServer: true,
+    // Always serve a build that includes the API URL used by capability mocks.
+    reuseExistingServer: false,
     timeout: 180_000,
   },
 });

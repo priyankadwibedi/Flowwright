@@ -1,27 +1,34 @@
 import Link from "next/link";
+import { externalLinks, routes } from "../../lib/routes";
 
 export function MarketingFooter() {
   return (
     <footer className="marketing-footer" id="about">
-      <div className="content-width footer-inner">
-        <div>
+      <div className="app-container footer-inner">
+        <div className="footer-brand">
           <div className="footer-wordmark">
             flowwright<span>®</span>
           </div>
           <p>Show the work. Ship the workflow.</p>
         </div>
-        <div className="footer-links">
-          <Link href="/record">Record</Link>
-          <Link href="/workflows/demo">Demo</Link>
-          <Link href="/tests">Tests</Link>
-          <a
-            href="https://github.com/priyankadwibedi/Flowwright/tree/main/docs"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Docs
+        <nav className="footer-links" aria-label="Footer">
+          <Link href={routes.record}>Record</Link>
+          <Link href={routes.demo}>Demo</Link>
+          <Link href={routes.architecture}>Architecture</Link>
+          <Link href={routes.tests}>Tests</Link>
+          <a href={externalLinks.docs} target="_blank" rel="noreferrer">
+            Documentation
           </a>
-        </div>
+          <a href={externalLinks.github} target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+          <a href={externalLinks.security} target="_blank" rel="noreferrer">
+            Security
+          </a>
+          <a href={externalLinks.license} target="_blank" rel="noreferrer">
+            License
+          </a>
+        </nav>
         <div className="footer-meta">
           <span>Apache License 2.0</span>
           <span>Hackathon prototype</span>

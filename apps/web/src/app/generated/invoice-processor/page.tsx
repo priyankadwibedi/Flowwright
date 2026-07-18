@@ -5,11 +5,13 @@ import { useMemo, useState } from "react";
 import { workflowIRSchema, type WorkflowIR } from "@flowwright/workflow-schema";
 import { AnnouncementBar } from "../../../components/marketing/AnnouncementBar";
 import { MarketingHeader } from "../../../components/marketing/MarketingHeader";
+import { BackLink } from "../../../components/navigation/BackLink";
 import {
   API_CONFIGURED,
   API_URL,
   apiUnavailableMessage,
 } from "../../../lib/config";
+import { routes } from "../../../lib/routes";
 
 const cases = [
   ["invoice-exact-match.json", "Exact match"],
@@ -88,6 +90,7 @@ export default function GeneratedInvoiceProcessorPage() {
         <AnnouncementBar />
         <MarketingHeader />
         <section className="generated-page content-width">
+          <BackLink href={routes.demo} label="Back to workflow" />
           <div className="eyebrow">Generated application / unavailable</div>
           <h1>Invoice processor unavailable</h1>
           <p className="generated-lede">{apiUnavailableMessage()}</p>
@@ -173,6 +176,7 @@ export default function GeneratedInvoiceProcessorPage() {
       <AnnouncementBar />
       <MarketingHeader />
       <section className="generated-page content-width">
+        <BackLink href={routes.demo} label="Back to workflow" />
         <div className="eyebrow">Generated application / invoice processor</div>
         <h1>Run the compiled workflow.</h1>
         <p className="generated-lede">
